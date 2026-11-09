@@ -1,0 +1,205 @@
+{
+  "users": {
+    "1": {
+      "user_id": 1,
+      "nama_lengkap": "Admin DIGILIB",
+      "email": "admin@digilib.id",
+      "password_hash": "DEMO_HASH_ADMIN",
+      "role": "admin",
+      "status": "aktif",
+      "created_at": "2026-10-27 08:00:00"
+    },
+    "2": {
+      "user_id": 2,
+      "nama_lengkap": "Andi Pratama",
+      "email": "andi@example.com",
+      "password_hash": "DEMO_HASH_ANDI",
+      "role": "anggota",
+      "status": "aktif",
+      "created_at": "2026-10-27 08:00:00"
+    },
+    "3": {
+      "user_id": 3,
+      "nama_lengkap": "Siti Rahma",
+      "email": "siti@example.com",
+      "password_hash": "DEMO_HASH_SITI",
+      "role": "anggota",
+      "status": "aktif",
+      "created_at": "2026-10-27 08:00:00"
+    },
+    "4": {
+      "user_id": 4,
+      "nama_lengkap": "Budi Santoso",
+      "email": "budi@example.com",
+      "password_hash": "DEMO_HASH_BUDI",
+      "role": "anggota",
+      "status": "aktif",
+      "created_at": "2026-10-27 08:00:00"
+    }
+  },
+  "anggota": {
+    "1": {
+      "anggota_id": 1,
+      "user_id": 2,
+      "nomor_anggota": "AGT-001",
+      "nomor_telepon": "081234567801",
+      "alamat": "Jember, Jawa Timur",
+      "tanggal_daftar": "2026-10-01",
+      "status": "aktif"
+    },
+    "2": {
+      "anggota_id": 2,
+      "user_id": 3,
+      "nomor_anggota": "AGT-002",
+      "nomor_telepon": "081234567802",
+      "alamat": "Bondowoso, Jawa Timur",
+      "tanggal_daftar": "2026-10-02",
+      "status": "aktif"
+    },
+    "3": {
+      "anggota_id": 3,
+      "user_id": 4,
+      "nomor_anggota": "AGT-003",
+      "nomor_telepon": "081234567803",
+      "alamat": "Banyuwangi, Jawa Timur",
+      "tanggal_daftar": "2026-10-03",
+      "status": "aktif"
+    }
+  },
+  "kategori": {
+    "1": {
+      "kategori_id": 1,
+      "nama_kategori": "Fiksi",
+      "deskripsi": "Novel dan cerita sastra",
+      "created_at": "2026-10-27 08:00:00"
+    },
+    "2": {
+      "kategori_id": 2,
+      "nama_kategori": "Teknologi",
+      "deskripsi": "Komputer dan teknologi informasi",
+      "created_at": "2026-10-27 08:00:00"
+    },
+    "3": {
+      "kategori_id": 3,
+      "nama_kategori": "Pendidikan",
+      "deskripsi": "Buku pembelajaran dan akademik",
+      "created_at": "2026-10-27 08:00:00"
+    }
+  },
+  "buku": {
+    "1": {
+      "buku_id": 1,
+      "kategori_id": 1,
+      "isbn": "9780000000001",
+      "judul": "Laskar Pelangi",
+      "penulis": "Andrea Hirata",
+      "penerbit": "Bentang Pustaka",
+      "tahun_terbit": 2020,
+      "rak": "A-01",
+      "stok": 10,
+      "cover_path": "covers/laskar-pelangi.jpg",
+      "status": "aktif"
+    },
+    "2": {
+      "buku_id": 2,
+      "kategori_id": 2,
+      "isbn": "9780000000002",
+      "judul": "Dasar Pemrograman Web",
+      "penulis": "Budi Santoso",
+      "penerbit": "Informatika",
+      "tahun_terbit": 2024,
+      "rak": "B-01",
+      "stok": 8,
+      "cover_path": "covers/pemrograman-web.jpg",
+      "status": "aktif"
+    },
+    "3": {
+      "buku_id": 3,
+      "kategori_id": 3,
+      "isbn": "9780000000003",
+      "judul": "Belajar Efektif",
+      "penulis": "Dewi Anggraini",
+      "penerbit": "Edukasi Press",
+      "tahun_terbit": 2023,
+      "rak": "C-01",
+      "stok": 12,
+      "cover_path": "covers/belajar-efektif.jpg",
+      "status": "aktif"
+    }
+  },
+  "peminjaman": {
+    "1": {
+      "peminjaman_id": 1,
+      "anggota_id": 1,
+      "buku_id": 1,
+      "tanggal_pinjam": "2026-10-01",
+      "tanggal_jatuh_tempo": "2026-10-08",
+      "status": "dikembalikan"
+    },
+    "2": {
+      "peminjaman_id": 2,
+      "anggota_id": 2,
+      "buku_id": 2,
+      "tanggal_pinjam": "2026-10-10",
+      "tanggal_jatuh_tempo": "2026-10-17",
+      "status": "dikembalikan"
+    },
+    "3": {
+      "peminjaman_id": 3,
+      "anggota_id": 3,
+      "buku_id": 3,
+      "tanggal_pinjam": "2026-10-20",
+      "tanggal_jatuh_tempo": "2026-10-27",
+      "status": "dikembalikan"
+    }
+  },
+  "pengembalian": {
+    "1": {
+      "pengembalian_id": 1,
+      "peminjaman_id": 1,
+      "tanggal_kembali": "2026-10-08",
+      "catatan": "Buku dikembalikan tepat waktu"
+    },
+    "2": {
+      "pengembalian_id": 2,
+      "peminjaman_id": 2,
+      "tanggal_kembali": "2026-10-20",
+      "catatan": "Buku dikembalikan terlambat"
+    },
+    "3": {
+      "pengembalian_id": 3,
+      "peminjaman_id": 3,
+      "tanggal_kembali": "2026-10-27",
+      "catatan": "Buku dikembalikan tepat waktu"
+    }
+  },
+  "denda": {
+    "1": {
+      "denda_id": 1,
+      "pengembalian_id": 1,
+      "jumlah_hari_terlambat": 0,
+      "tarif_per_hari": 2000,
+      "jumlah_denda": 0,
+      "status_pembayaran": "lunas",
+      "tanggal_pembayaran": null
+    },
+    "2": {
+      "denda_id": 2,
+      "pengembalian_id": 2,
+      "jumlah_hari_terlambat": 3,
+      "tarif_per_hari": 2000,
+      "jumlah_denda": 6000,
+      "status_pembayaran": "belum_dibayar",
+      "tanggal_pembayaran": null
+    },
+    "3": {
+      "denda_id": 3,
+      "pengembalian_id": 3,
+      "jumlah_hari_terlambat": 0,
+      "tarif_per_hari": 2000,
+      "jumlah_denda": 0,
+      "status_pembayaran": "lunas",
+      "tanggal_pembayaran": null
+    }
+  }
+}

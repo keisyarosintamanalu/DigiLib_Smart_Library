@@ -209,19 +209,15 @@
     app.innerHTML = `
       <main class="login-bg flex min-h-screen items-center justify-center px-4 py-10">
         <div class="grid w-full max-w-5xl overflow-hidden rounded-[28px] bg-white shadow-2xl md:grid-cols-[1fr_1fr]">
-          <section class="hidden flex-col justify-between p-11 text-white md:flex">
+          <section class="login-brand-panel hidden flex-col justify-center p-11 text-white md:flex">
             <div>
               <div class="mb-12 flex items-center gap-3">
                 <div class="grid h-12 w-12 place-items-center rounded-2xl bg-white/15">${icon('book', 25)}</div>
                 <div><div class="display-font text-sm font-extrabold tracking-wide">DIGILIB</div><div class="text-xs text-white/70">SMART LIBRARY</div></div>
               </div>
-              <p class="mb-4 text-xs font-bold uppercase tracking-[.22em] text-teal-100">Ruang tumbuh bersama</p>
-              <h1 class="display-font max-w-sm text-4xl font-extrabold leading-tight">Pengetahuan selalu dekat.</h1>
-              <p class="mt-5 max-w-sm text-sm leading-7 text-white/75">Kelola koleksi, peminjaman, dan aktivitas membaca dalam satu perpustakaan digital yang praktis.</p>
-            </div>
-            <div class="rounded-2xl border border-white/15 bg-white/10 p-5">
-              <div class="mb-2 flex items-center gap-2 text-sm font-bold">${icon('spark', 17)} Mulai dengan akun contoh</div>
-              <p class="text-xs leading-6 text-white/70">Admin: admin@digilib.id · admin123<br>Anggota: anggota@digilib.id · anggota123</p>
+              <p class="mb-4 text-xs font-bold uppercase tracking-[.22em] text-teal-100">Temukan bacaan yang relate</p>
+              <h1 class="login-brand-heading max-w-sm text-4xl font-bold leading-tight">Buka cerita. Perluas perspektif.</h1>
+              <p class="mt-5 max-w-sm text-sm leading-7 text-white/85">Cari bacaan yang kamu suka, dapatkan insight baru, dan kelola perjalanan literasimu dalam satu ruang.</p>
             </div>
           </section>
           <section class="p-7 sm:p-11">

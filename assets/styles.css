@@ -251,7 +251,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--digilib-teal);
   min-height: 620px;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 10% 90%, rgba(48, 168, 145, .3), transparent 40%),
+    linear-gradient(180deg, rgba(7, 27, 30, .52), rgba(7, 27, 30, .7)),
+    url("../download.jpg") center / cover no-repeat,
     linear-gradient(145deg, #0b625d 0%, #104d50 50%, #173845 100%);
 }
 .login-brand-panel::before,
@@ -272,8 +273,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--digilib-teal);
   border: 1px solid rgba(255, 255, 255, .17);
   box-shadow: 0 10px 24px rgba(4, 36, 39, .18);
 }
-.login-book-art { width: min(100%, 390px); margin: .25rem auto; filter: drop-shadow(0 16px 15px rgba(3, 34, 38, .16)); }
-.login-book-art svg { display: block; width: 100%; height: auto; }
+.login-brand-heading { font-family: "Space Grotesk", sans-serif; letter-spacing: 0; text-shadow: 0 2px 18px rgba(0, 0, 0, .24); }
 .login-brand-footer {
   padding: 14px 15px;
   border: 1px solid rgba(229, 255, 246, .17);
@@ -336,7 +336,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--digilib-teal);
 }
 @media (min-width: 768px) and (max-width: 1023px) {
   .login-brand-panel { min-height: 590px; padding: 2rem !important; }
-  .login-book-art { width: min(100%, 330px); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
