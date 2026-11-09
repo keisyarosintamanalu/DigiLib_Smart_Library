@@ -80,58 +80,30 @@ $selectedRole = (string) ($_POST['role'] ?? 'admin');
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title>Masuk — DIGILIB SMART LIBRARY</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="<?= digilibEscape(digilibUrl('assets/styles.css')) ?>">
 </head>
 <body class="bg-sand text-ink antialiased">
-  <main class="login-bg flex min-h-screen items-center justify-center px-4 py-10">
-    <div class="grid w-full max-w-5xl overflow-hidden rounded-[28px] bg-white shadow-2xl md:grid-cols-[1fr_1fr]">
-      <section class="login-brand-panel hidden flex-col justify-between p-8 text-white sm:p-10 lg:p-12 md:flex">
-        <div class="login-brand-content">
-          <div class="mb-10 flex items-center gap-3">
-            <div class="login-brand-mark grid h-12 w-12 place-items-center rounded-2xl">
-              <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16M8 7h8M8 11h8"/></svg>
-            </div>
-            <div><div class="display-font text-base font-extrabold tracking-wide">DIGILIB</div><div class="text-[10px] font-semibold tracking-[.18em] text-white/70">SMART LIBRARY</div></div>
-          </div>
-          <p class="mb-3 text-xs font-bold uppercase tracking-[.2em] text-teal-100">Ruang tumbuh bersama</p>
-          <h1 class="display-font max-w-sm text-3xl font-extrabold leading-tight lg:text-4xl">Pengetahuan selalu dekat.</h1>
-          <p class="mt-4 max-w-sm text-sm leading-7 text-white/75">Kelola koleksi, temukan bacaan, dan dukung pengalaman membaca yang lebih mudah dalam satu perpustakaan digital.</p>
-        </div>
-        <div class="login-book-art" aria-hidden="true">
-          <svg viewBox="0 0 440 250" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="222" cy="218" rx="172" ry="17" fill="#092F35" fill-opacity=".22"/>
-            <path d="M88 205h264" stroke="#B9EEE0" stroke-opacity=".6" stroke-width="3" stroke-linecap="round"/>
-            <path d="M111 203V87c0-8 7-13 15-10l62 25v101l-62-20c-8-3-15 5-15 13Z" fill="#F5D48D"/>
-            <path d="M188 102l68-27c8-3 15 2 15 10v116l-68 22c-8 3-15-2-15-10V102Z" fill="#FFF9E9"/>
-            <path d="M188 102l-62-25c-8-3-15 2-15 10v116c0-8 7-13 15-10l62 20V102Z" stroke="#FDF3D8" stroke-width="3"/>
-            <path d="M196 106l57-22v13l-57 22v-13Z" fill="#C9E9D8"/>
-            <path d="M196 132l46-18M196 143l46-18" stroke="#A7CFC0" stroke-width="4" stroke-linecap="round"/>
-            <path d="M126 105l48 19M126 119l48 19M126 133l37 15" stroke="#D4A85E" stroke-width="4" stroke-linecap="round"/>
-            <path d="M273 202V69c0-7 6-12 13-9l15 6v135l-15-6c-7-3-13 0-13 7Z" fill="#F28D72"/>
-            <path d="M301 66l15-6c7-3 13 2 13 9v133c0-7-6-10-13-7l-15 6V66Z" fill="#FFD0A3"/>
-            <path d="M282 81l8 3M282 94l8 3M306 80l8-3M306 93l8-3" stroke="#FFF4DD" stroke-width="3" stroke-linecap="round"/>
-            <path d="M320 202V99c0-6 5-9 11-7l18 6v103l-18-6c-6-2-11 1-11 7Z" fill="#7BC6B1"/>
-            <path d="M349 98l17-5c6-2 11 2 11 8v100c0-6-5-9-11-7l-17 7V98Z" fill="#BDE8D5"/>
-            <circle cx="352" cy="52" r="17" fill="#F5D48D" fill-opacity=".95"/>
-            <path d="M352 24v-8M380 52h8M324 52h-8M372 32l6-6M332 72l-6 6" stroke="#F5D48D" stroke-width="3" stroke-linecap="round"/>
-            <path d="M81 65c8-12 19-18 33-17" stroke="#A4E2CF" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 8"/>
-            <path d="M73 57l8 8 8-8" stroke="#A4E2CF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <div class="login-brand-footer flex items-center gap-3">
-          <span class="login-brand-footer-icon grid h-9 w-9 place-items-center rounded-xl">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+  <main class="login-bg login-page">
+    <div class="login-card">
+      <section class="login-brand-panel text-white">
+        <div class="login-brand-identity">
+          <span class="login-brand-mark" aria-hidden="true">
+            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16M8 7h8M8 11h8"/></svg>
           </span>
-          <div><div class="text-xs font-bold">Satu ruang untuk setiap cerita.</div><div class="mt-1 text-[11px] text-white/65">Perpustakaan digital yang dekat dengan Anda.</div></div>
+          <span><span class="login-brand-name">DIGILIB</span><span class="login-brand-subtitle">SMART LIBRARY</span></span>
+        </div>
+        <div class="login-brand-copy">
+          <p class="login-brand-eyebrow">YOUR GATEWAY TO KNOWLEDGE</p>
+          <h1 class="login-brand-heading">Setiap Buku, Membuka Dunia Baru.</h1>
+          <p class="login-brand-description">Temukan inspirasi dari setiap halaman, jelajahi beragam koleksi bacaan, dan bangun pengalaman literasi yang lebih bermakna bersama DIGILIB.</p>
         </div>
       </section>
-      <section class="p-7 sm:p-11">
-        <div class="mb-9 flex items-center gap-3 md:hidden">
-          <div class="grid h-11 w-11 place-items-center rounded-2xl bg-teal-700 text-white">D</div>
-          <div><div class="display-font text-sm font-extrabold">DIGILIB</div><div class="text-xs text-slate-500">SMART LIBRARY</div></div>
-        </div>
-        <div class="mb-8">
+      <section class="login-form-panel">
+        <div class="login-form-heading">
           <p class="mb-2 text-xs font-bold uppercase tracking-[.16em] text-teal-700">Selamat datang kembali</p>
           <h2 class="display-font text-2xl font-extrabold">Masuk ke akun Anda</h2>
           <p class="mt-2 text-sm text-slate-500">Pilih jenis akun yang akan digunakan.</p>

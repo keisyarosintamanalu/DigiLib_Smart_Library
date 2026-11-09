@@ -207,25 +207,21 @@
 
   function renderLogin() {
     app.innerHTML = `
-      <main class="login-bg flex min-h-screen items-center justify-center px-4 py-10">
-        <div class="grid w-full max-w-5xl overflow-hidden rounded-[28px] bg-white shadow-2xl md:grid-cols-[1fr_1fr]">
-          <section class="login-brand-panel hidden flex-col justify-center p-11 text-white md:flex">
-            <div>
-              <div class="mb-12 flex items-center gap-3">
-                <div class="grid h-12 w-12 place-items-center rounded-2xl bg-white/15">${icon('book', 25)}</div>
-                <div><div class="display-font text-sm font-extrabold tracking-wide">DIGILIB</div><div class="text-xs text-white/70">SMART LIBRARY</div></div>
-              </div>
-              <p class="mb-4 text-xs font-bold uppercase tracking-[.22em] text-teal-100">Temukan bacaan yang relate</p>
-              <h1 class="login-brand-heading max-w-sm text-4xl font-bold leading-tight">Buka cerita. Perluas perspektif.</h1>
-              <p class="mt-5 max-w-sm text-sm leading-7 text-white/85">Cari bacaan yang kamu suka, dapatkan insight baru, dan kelola perjalanan literasimu dalam satu ruang.</p>
+      <main class="login-bg login-page">
+        <div class="login-card">
+          <section class="login-brand-panel text-white">
+            <div class="login-brand-identity">
+              <span class="login-brand-mark">${icon('book', 25)}</span>
+              <span><span class="login-brand-name">DIGILIB</span><span class="login-brand-subtitle">SMART LIBRARY</span></span>
+            </div>
+            <div class="login-brand-copy">
+              <p class="login-brand-eyebrow">YOUR GATEWAY TO KNOWLEDGE</p>
+              <h1 class="login-brand-heading">Setiap Buku, Membuka Dunia Baru.</h1>
+              <p class="login-brand-description">Temukan inspirasi dari setiap halaman, jelajahi beragam koleksi bacaan, dan bangun pengalaman literasi yang lebih bermakna bersama DIGILIB.</p>
             </div>
           </section>
-          <section class="p-7 sm:p-11">
-            <div class="mb-9 flex items-center gap-3 md:hidden">
-              <div class="grid h-11 w-11 place-items-center rounded-2xl bg-teal-700 text-white">${icon('book', 22)}</div>
-              <div><div class="display-font text-sm font-extrabold">DIGILIB</div><div class="text-xs text-slate-500">SMART LIBRARY</div></div>
-            </div>
-            <div class="mb-8">
+          <section class="login-form-panel">
+            <div class="login-form-heading">
               <p class="mb-2 text-xs font-bold uppercase tracking-[.16em] text-teal-700">Selamat datang kembali</p>
               <h2 class="display-font text-2xl font-extrabold">Masuk ke akun Anda</h2>
               <p class="mt-2 text-sm text-slate-500">Masuk sebagai admin atau anggota perpustakaan.</p>
