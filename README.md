@@ -68,6 +68,12 @@ Kata sandi disimpan sebagai hash `password_hash()` di database; SQL tidak menyim
 - Logout memakai permintaan POST dengan token CSRF, lalu menghapus sesi PHP.
 - `.htaccess` memilih `index.php` sebagai halaman awal, mengalihkan `index.html` lama ke halaman login, dan menolak akses web langsung ke folder konfigurasi serta SQL.
 
+## Landing page dan deployment Vercel
+
+Pada deployment Vercel `key.my.id`, entry point yang digunakan adalah `index.html`. Landing page, login demo, dan dashboard SPA dirender oleh `assets/app.js`; perpindahan Landing → Login → Dashboard terjadi dalam aplikasi tersebut tanpa mengganti URL.
+
+Jalur SPA ini memakai `localStorage` untuk menyimpan data dan sesi demo di browser, bukan MySQL atau session PHP. Data tidak dibagikan antarperangkat dan login tersebut bukan autentikasi server-side untuk penggunaan produksi. PHP/MySQL di `index.php`, `admin/`, dan `anggota/` adalah jalur terpisah yang berjalan di Apache seperti Laragon/cPanel; Vercel hanya menjalankannya jika deployment dikonfigurasi dengan runtime/container PHP dan koneksi database yang sesuai.
+
 ## Dashboard Admin
 
 Dashboard di `admin/index.php` mengambil jumlah buku, anggota, pinjaman aktif, dan total denda langsung dari MySQL. Dashboard juga menampilkan daftar buku aktif dengan stok rendah (1–3 eksemplar), grafik koleksi per kategori, serta grafik statistik transaksi menurut status termasuk pinjaman yang terlambat. Angka dan grafik dimuat ulang dari database setiap kali dashboard dibuka, sehingga mengikuti perubahan transaksi peminjaman dan pengembalian tanpa data statistik manual.

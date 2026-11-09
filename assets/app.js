@@ -26,6 +26,7 @@
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/>',
     trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>',
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    'eye-off': '<path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a14 14 0 0 1-3.2 4.1M6.2 6.2C3.5 8.1 2 12 2 12s3.5 7 10 7a10.5 10.5 0 0 0 4-.8"/>',
     printer: '<path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
@@ -205,6 +206,120 @@
     return item ? item.label : 'Dashboard';
   }
 
+  function renderLanding() {
+    app.innerHTML = `
+      <main class="landing-page" id="home">
+        <header class="landing-nav">
+          <a class="landing-brand" href="#home" aria-label="DIGILIB Smart Library, beranda">
+            <span class="landing-brand-mark">${icon('book', 22)}</span>
+            <span><strong>DIGILIB</strong><small>SMART LIBRARY</small></span>
+          </a>
+          <nav class="landing-nav-links" id="landing-nav-links" aria-label="Navigasi utama">
+            <a href="#home" data-action="close-landing-menu">Home</a>
+            <a href="#about" data-action="close-landing-menu">About</a>
+            <a href="#features" data-action="close-landing-menu">Features</a>
+            <a href="#services" data-action="close-landing-menu">Services</a>
+            <a href="#contact" data-action="close-landing-menu">Contact</a>
+            <button class="landing-mobile-login" type="button" data-action="open-login">Login</button>
+            <button class="landing-mobile-cta" type="button" data-action="open-login">Get Started ${icon('chevron', 16)}</button>
+          </nav>
+          <div class="landing-nav-actions">
+            <button class="landing-login-button" type="button" data-action="open-login">Login</button>
+            <button class="landing-cta-button" type="button" data-action="open-login">Get Started ${icon('chevron', 16)}</button>
+          </div>
+          <button class="landing-menu-button" type="button" data-action="toggle-landing-menu" aria-label="Buka navigasi" aria-controls="landing-nav-links" aria-expanded="false">${icon('menu', 21)}</button>
+        </header>
+
+        <section class="landing-hero" aria-labelledby="landing-title">
+          <div class="landing-hero-content">
+            <p class="landing-eyebrow"><span></span> DIGILIB SMART LIBRARY</p>
+            <h1 id="landing-title">Discover Knowledge.<br><em>Explore Possibilities.</em></h1>
+            <p class="landing-hero-subtitle">Your Digital Gateway to Knowledge and Learning.</p>
+            <p class="landing-hero-description">DIGILIB SMART LIBRARY adalah sistem informasi perpustakaan digital yang membantu pengguna mengakses, menemukan, dan mengelola koleksi buku serta aktivitas perpustakaan secara lebih mudah, cepat, dan terorganisir.</p>
+            <div class="landing-hero-actions">
+              <button class="landing-cta-button landing-cta-light" type="button" data-action="open-login">Explore Library ${icon('chevron', 17)}</button>
+              <button class="landing-text-link" type="button" data-action="open-login">Get Started <span>${icon('chevron', 15)}</span></button>
+            </div>
+          </div>
+          <a class="landing-scroll-cue" href="#about" aria-label="Lanjut ke informasi DIGILIB"><span></span> Scroll to explore</a>
+          <div class="landing-hero-index" aria-hidden="true">01 <span></span> DIGITAL LIBRARY</div>
+        </section>
+
+        <section class="landing-about landing-section" id="about">
+          <div class="landing-section-kicker">ABOUT DIGILIB <span>01 / 04</span></div>
+          <div class="landing-about-grid">
+            <h2>More Than<br><em>Just a Library</em></h2>
+            <div class="landing-about-copy">
+              <p class="landing-lead">Satu ruang digital untuk koleksi, anggota, dan aktivitas perpustakaan.</p>
+              <p>DIGILIB SMART LIBRARY mendukung pengelolaan perpustakaan dari katalog buku hingga administrasi peminjaman, pengembalian, dan laporan. Informasi disusun dalam satu alur yang mudah dijelajahi oleh pengelola maupun anggota.</p>
+              <button class="landing-inline-link" type="button" data-action="open-login">Masuk dan jelajahi sistem ${icon('chevron', 16)}</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="landing-features landing-section" id="features">
+          <div class="landing-section-kicker">WHAT YOU CAN DO <span>02 / 04</span></div>
+          <div class="landing-section-heading">
+            <div><h2>Everything in its<br><em>right place.</em></h2></div>
+            <p>Alat yang dibutuhkan untuk menjaga aktivitas perpustakaan tetap tertata, dari katalog sampai laporan.</p>
+          </div>
+          <div class="landing-feature-grid">
+            <article class="landing-feature"><span class="landing-feature-icon">${icon('book', 21)}</span><h3>Book Management</h3><p>Kelola ISBN, detail bibliografi, kategori, stok, dan cover koleksi.</p></article>
+            <article class="landing-feature"><span class="landing-feature-icon">${icon('users', 21)}</span><h3>Member Management</h3><p>Atur profil, akun, status aktif, dan informasi keanggotaan.</p></article>
+            <article class="landing-feature"><span class="landing-feature-icon">${icon('grid', 21)}</span><h3>Organized Catalog</h3><p>Temukan buku melalui pencarian judul, ISBN, penulis, atau kategori.</p></article>
+            <article class="landing-feature"><span class="landing-feature-icon">${icon('repeat', 21)}</span><h3>Book Circulation</h3><p>Pantau peminjaman, jatuh tempo, dan riwayat transaksi anggota.</p></article>
+            <article class="landing-feature"><span class="landing-feature-icon">${icon('receipt', 21)}</span><h3>Returns & Fines</h3><p>Catat pengembalian, hitung keterlambatan, dan pantau status denda.</p></article>
+            <article class="landing-feature"><span class="landing-feature-icon">${icon('chart', 21)}</span><h3>Library Reports</h3><p>Tinjau laporan buku, anggota, sirkulasi, pengembalian, dan denda.</p></article>
+          </div>
+        </section>
+
+        <section class="landing-services landing-section" id="services">
+          <div class="landing-section-kicker">HOW IT WORKS <span>03 / 04</span></div>
+          <div class="landing-section-heading">
+            <div><h2>A clear path<br><em>to every book.</em></h2></div>
+            <p>Mulai dari menemukan layanan hingga mengelola aktivitas sesuai peran pengguna.</p>
+          </div>
+          <ol class="landing-steps">
+            <li><span>01</span><div><h3>Discover</h3><p>Kenali koleksi dan layanan perpustakaan.</p></div></li>
+            <li><span>02</span><div><h3>Access</h3><p>Masuk dengan akun admin atau anggota.</p></div></li>
+            <li><span>03</span><div><h3>Explore</h3><p>Buka katalog dan fitur sesuai hak akses.</p></div></li>
+            <li><span>04</span><div><h3>Manage</h3><p>Kelola aktivitas perpustakaan secara teratur.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="landing-benefits landing-section">
+          <div class="landing-section-kicker">BUILT FOR BETTER FLOW <span>04 / 04</span></div>
+          <div class="landing-benefits-grid">
+            <h2>Less friction.<br><em>More discovery.</em></h2>
+            <ul>
+              <li><span>${icon('check', 17)}</span> Efficient library management</li>
+              <li><span>${icon('check', 17)}</span> Organized book collections</li>
+              <li><span>${icon('check', 17)}</span> Simplified circulation process</li>
+              <li><span>${icon('check', 17)}</span> Better data management</li>
+              <li><span>${icon('check', 17)}</span> Accessible digital experience</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="landing-contact" id="contact">
+          <p class="landing-eyebrow"><span></span> YOUR NEXT CHAPTER STARTS HERE</p>
+          <h2>Start Your Digital Library<br><em>Journey Today.</em></h2>
+          <p>Experience a more organized and efficient way to manage library activities.</p>
+          <button class="landing-cta-button landing-cta-light" type="button" data-action="open-login">Access Your Library ${icon('chevron', 17)}</button>
+        </section>
+
+        <footer class="landing-footer">
+          <a class="landing-brand" href="#home" aria-label="DIGILIB Smart Library, kembali ke atas">
+            <span class="landing-brand-mark">${icon('book', 21)}</span>
+            <span><strong>DIGILIB</strong><small>SMART LIBRARY</small></span>
+          </a>
+          <p>Ruang digital untuk mengelola dan menjelajahi layanan perpustakaan.</p>
+          <nav aria-label="Tautan footer"><a href="#about">About</a><a href="#features">Features</a><a href="#services">Services</a><button type="button" data-action="open-login">Login</button></nav>
+          <small class="landing-copyright">© ${new Date().getFullYear()} DIGILIB SMART LIBRARY</small>
+        </footer>
+      </main>`;
+  }
+
   function renderLogin() {
     app.innerHTML = `
       <main class="login-bg login-page">
@@ -222,14 +337,15 @@
           </section>
           <section class="login-form-panel">
             <div class="login-form-heading">
+              <button class="login-back-link" type="button" data-action="open-landing">${icon('chevron', 15)} Kembali ke beranda</button>
               <p class="mb-2 text-xs font-bold uppercase tracking-[.16em] text-teal-700">Selamat datang kembali</p>
               <h2 class="display-font text-2xl font-extrabold">Masuk ke akun Anda</h2>
               <p class="mt-2 text-sm text-slate-500">Masuk sebagai admin atau anggota perpustakaan.</p>
             </div>
             <form id="login-form" class="space-y-5">
               <div><label class="field-label" for="login-email">Email</label><input class="field" id="login-email" name="email" type="email" autocomplete="username" placeholder="nama@email.com" required></div>
-              <div><label class="field-label" for="login-password">Kata sandi</label><input class="field" id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Masukkan kata sandi" required></div>
-              <p id="login-error" class="hidden rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700"></p>
+              <div><label class="field-label" for="login-password">Kata sandi</label><div class="login-password-control"><input class="field" id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Masukkan kata sandi" required><button class="login-password-toggle" type="button" data-action="toggle-password" aria-label="Tampilkan kata sandi" aria-pressed="false" title="Tampilkan kata sandi">${icon('eye', 17)}</button></div></div>
+              <p id="login-error" class="hidden rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert"></p>
               <button class="btn btn-primary w-full py-3" type="submit">Masuk ke perpustakaan ${icon('chevron', 16)}</button>
             </form>
             <div class="mt-7 border-t border-slate-100 pt-5">
@@ -712,28 +828,46 @@
   }
 
   function handleLogin(form) {
-    const fields = new FormData(form);
-    const email = String(fields.get('email')).trim().toLowerCase();
-    const password = String(fields.get('password'));
-    const user = data.users.find(item => item.email.toLowerCase() === email && item.password === password);
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalButtonContent = submitButton.innerHTML;
     const error = document.getElementById('login-error');
-    if (!user) {
-      error.textContent = 'Email atau kata sandi tidak sesuai.';
-      error.classList.remove('hidden');
-      return;
-    }
-    if (user.role === 'member') {
-      const member = memberById(user.memberId);
-      if (!member || member.status !== 'Aktif') {
-        error.textContent = 'Akun anggota tidak aktif. Silakan hubungi pustakawan.';
+    const restoreSubmitButton = () => {
+      submitButton.disabled = false;
+      submitButton.removeAttribute('aria-busy');
+      submitButton.innerHTML = originalButtonContent;
+    };
+
+    submitButton.disabled = true;
+    submitButton.setAttribute('aria-busy', 'true');
+    submitButton.innerHTML = `${icon('clock', 16)} Memeriksa...`;
+    window.setTimeout(() => {
+      const fields = new FormData(form);
+      const email = String(fields.get('email')).trim().toLowerCase();
+      const password = String(fields.get('password'));
+      const user = data.users.find(item => item.email.toLowerCase() === email && item.password === password);
+      if (!user) {
+        error.textContent = 'Email atau kata sandi tidak sesuai.';
         error.classList.remove('hidden');
+        restoreSubmitButton();
         return;
       }
-    }
-    if (!saveSession(user.id)) return;
-    currentUser = user;
-    currentPage = 'dashboard';
-    renderShell();
+      if (user.role === 'member') {
+        const member = memberById(user.memberId);
+        if (!member || member.status !== 'Aktif') {
+          error.textContent = 'Akun anggota tidak aktif. Silakan hubungi pustakawan.';
+          error.classList.remove('hidden');
+          restoreSubmitButton();
+          return;
+        }
+      }
+      if (!saveSession(user.id)) {
+        restoreSubmitButton();
+        return;
+      }
+      currentUser = user;
+      currentPage = 'dashboard';
+      renderShell();
+    }, 80);
   }
 
   function restoreSeed() {
@@ -763,11 +897,45 @@
     if (target.dataset.report) { reportType = target.dataset.report; renderShell(); return; }
     const action = target.dataset.action;
     switch (action) {
+      case 'open-login':
+        renderLogin();
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        break;
+      case 'open-landing':
+        renderLanding();
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        break;
+      case 'toggle-landing-menu': {
+        const menu = app.querySelector('.landing-nav-links');
+        const isOpen = menu?.classList.toggle('is-open') || false;
+        target.setAttribute('aria-expanded', String(isOpen));
+        target.setAttribute('aria-label', isOpen ? 'Tutup navigasi' : 'Buka navigasi');
+        break;
+      }
+      case 'close-landing-menu': {
+        const menu = app.querySelector('.landing-nav-links');
+        menu?.classList.remove('is-open');
+        app.querySelector('[data-action="toggle-landing-menu"]')?.setAttribute('aria-expanded', 'false');
+        break;
+      }
+      case 'toggle-password': {
+        const passwordInput = app.querySelector('#login-password');
+        if (!passwordInput) break;
+        const showingPassword = passwordInput.type === 'password';
+        passwordInput.type = showingPassword ? 'text' : 'password';
+        target.setAttribute('aria-pressed', String(showingPassword));
+        target.setAttribute('aria-label', showingPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi');
+        target.title = showingPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi';
+        target.innerHTML = icon(showingPassword ? 'eye-off' : 'eye', 17);
+        break;
+      }
       case 'logout':
         saveSession(null);
         currentUser = null;
         categoryChart = null;
-        renderLogin();
+        renderLanding();
         break;
       case 'toggle-menu':
         app.querySelector('.sidebar')?.classList.toggle('mobile-open');
@@ -861,5 +1029,5 @@
   });
 
   if (currentUser) renderShell();
-  else renderLogin();
+  else renderLanding();
 })();
