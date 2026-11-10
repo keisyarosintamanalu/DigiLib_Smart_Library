@@ -272,7 +272,9 @@ if ($statusFilter !== '') {
 }
 $statement = $pdo->prepare(
     'SELECT a.`anggota_id`, a.`nomor_anggota`, a.`nomor_telepon`, a.`alamat`,
-            a.`tanggal_daftar`, a.`status`, u.`nama_lengkap`, u.`email`
+            a.`tanggal_daftar`, a.`status`, u.`nama_lengkap`, u.`email`,
+            (SELECT COUNT(*) FROM `peminjaman` p
+             WHERE p.`anggota_id` = a.`anggota_id` AND p.`status` = \'dipinjam\') AS `pinjaman_aktif`
      FROM `anggota` a
      INNER JOIN `users` u ON u.`user_id` = a.`user_id`
      WHERE ' . implode(' AND ', $conditions) . '
@@ -313,7 +315,7 @@ $isEditing = $editingMember !== null;
   <div class="table-wrap">
     <?php if ($members): ?>
       <table class="data-table">
-        <thead><tr><th>Anggota</th><th>Nomor anggota</th><th>Kontak</th><th>Alamat</th><th>Tanggal daftar</th><th>Status</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Anggota</th><th>Nomor anggota</th><th>Kontak</th><th>Alamat</th><th>Tanggal daftar</th><th>Pinjaman aktif</th><th>Status</th><th>Aksi</th></tr></thead>
         <tbody>
           <?php foreach ($members as $member): ?>
             <tr>
@@ -322,6 +324,7 @@ $isEditing = $editingMember !== null;
               <td><?= digilibEscape($member['nomor_telepon'] ?: '—') ?></td>
               <td class="max-w-xs truncate"><?= digilibEscape($member['alamat'] ?: '—') ?></td>
               <td><?= digilibEscape((new DateTimeImmutable($member['tanggal_daftar']))->format('d-m-Y')) ?></td>
+              <td><span class="badge <?= (int) $member['pinjaman_aktif'] > 0 ? 'badge-blue' : 'badge-gray' ?>"><?= (int) $member['pinjaman_aktif'] ?> buku</span></td>
               <td><span class="badge <?= $member['status'] === 'aktif' ? 'badge-green' : 'badge-gray' ?>"><?= $member['status'] === 'aktif' ? 'Aktif' : 'Nonaktif' ?></span></td>
               <td>
                 <div class="flex items-center gap-1">

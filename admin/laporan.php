@@ -147,11 +147,11 @@ if ($errorMessage === '') {
     $records = $statement->fetchAll();
 }
 
-$formatCell = static function (string $key, mixed $value): string {
+$formatCell = static function (string $key, $value): string {
     if ($value === null || $value === '') {
         return '—';
     }
-    if (str_starts_with($key, 'tanggal_')) {
+    if (strpos($key, 'tanggal_') === 0) {
         return (new DateTimeImmutable((string) $value))->format('d-m-Y');
     }
     if (in_array($key, ['jumlah_denda', 'tarif_per_hari'], true)) {

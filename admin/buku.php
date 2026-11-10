@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/../config/supabase_storage.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
 $pdo = digilibDatabaseConnection();
 $portalTitle = 'Data Buku';
@@ -13,33 +14,7 @@ unset($_SESSION['books_success']);
 $formValues = [];
 $editingBook = null;
 
-$uploadDirectory = __DIR__ . '/../assets/uploads/covers';
-$uploadUrlPrefix = 'assets/uploads/covers/';
-
-function digilibBookCoverPath(?string $coverPath): ?string
-{
-    if ($coverPath === null || $coverPath === '' || basename($coverPath) !== $coverPath) {
-        return null;
-    }
-
-    $resolvedDirectory = realpath(__DIR__ . '/../assets/uploads/covers');
-    $resolvedFile = realpath(__DIR__ . '/../assets/uploads/covers/' . $coverPath);
-    if ($resolvedDirectory === false || $resolvedFile === false || !str_starts_with($resolvedFile, $resolvedDirectory . DIRECTORY_SEPARATOR) || !is_file($resolvedFile)) {
-        return null;
-    }
-
-    return $resolvedFile;
-}
-
-function digilibRemoveBookCover(?string $coverPath): void
-{
-    $resolvedPath = digilibBookCoverPath($coverPath);
-    if ($resolvedPath !== null && !unlink($resolvedPath)) {
-        error_log('DIGILIB could not remove book cover: ' . $resolvedPath);
-    }
-}
-
-function digilibBookRedirect(): never
+function digilibBookRedirect(): void
 {
     header('Location: ' . digilibUrl('admin/buku.php'), true, 303);
     exit;
@@ -128,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $newCoverFilename = null;
+            $newCoverPath = null;
             $oldCoverFilename = $editingBook['cover_path'] ?? null;
             $coverUpload = $_FILES['cover'] ?? null;
             if ($errorMessage === '' && is_array($coverUpload) && $coverUpload['error'] !== UPLOAD_ERR_NO_FILE) {
@@ -148,19 +123,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!isset($allowedTypes[$mimeType]) || $imageInfo === false) {
                         $errorMessage = 'Format cover harus berupa gambar JPG, PNG, atau WebP.';
                     } else {
-                        $newCoverFilename = bin2hex(random_bytes(16)) . '.' . $allowedTypes[$mimeType];
-                        if (!is_dir($uploadDirectory) && !mkdir($uploadDirectory, 0755, true) && !is_dir($uploadDirectory)) {
-                            $errorMessage = 'Folder penyimpanan cover tidak dapat disiapkan.';
-                        } elseif (!move_uploaded_file($coverUpload['tmp_name'], $uploadDirectory . DIRECTORY_SEPARATOR . $newCoverFilename)) {
-                            $errorMessage = 'Cover gagal disimpan. Periksa izin folder uploads/covers.';
-                            $newCoverFilename = null;
+                        try {
+                            $newCoverPath = digilibUploadBookCover(
+                                $coverUpload['tmp_name'],
+                                $mimeType,
+                                $allowedTypes[$mimeType]
+                            );
+                        } catch (RuntimeException $exception) {
+                            error_log('DIGILIB book cover upload failed: ' . $exception->getMessage());
+                            $errorMessage = 'Cover gagal disimpan ke Supabase Storage. Periksa konfigurasi kunci dan bucket Supabase.';
                         }
                     }
                 }
             }
 
             if ($errorMessage === '') {
-                $coverPath = $newCoverFilename ?? $oldCoverFilename;
+                $coverPath = $newCoverPath ?? $oldCoverFilename;
                 try {
                     if ($isEditing) {
                         $statement = $pdo->prepare(
@@ -183,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'cover_path' => $coverPath,
                             'buku_id' => $bookId,
                         ]);
-                        if ($newCoverFilename !== null) {
+                        if ($newCoverPath !== null) {
                             digilibRemoveBookCover($oldCoverFilename);
                         }
                         $_SESSION['books_success'] = 'Perubahan buku berhasil disimpan.';
@@ -209,8 +187,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     digilibBookRedirect();
                 } catch (PDOException $exception) {
-                    if ($newCoverFilename !== null) {
-                        digilibRemoveBookCover($newCoverFilename);
+                    if ($newCoverPath !== null) {
+                        digilibRemoveBookCover($newCoverPath);
                     }
                     error_log('DIGILIB book save database error: ' . $exception->getMessage());
                     $errorMessage = $exception->getCode() === '23000'
@@ -260,7 +238,9 @@ if ($categoryFilter !== null) {
 $whereSql = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 $listStatement = $pdo->prepare(
     'SELECT b.`buku_id`, b.`isbn`, b.`judul`, b.`penulis`, b.`penerbit`, b.`tahun_terbit`,
-            b.`rak`, b.`stok`, b.`cover_path`, k.`nama_kategori`
+            b.`rak`, b.`stok`, b.`cover_path`, k.`nama_kategori`,
+            (SELECT COUNT(*) FROM `peminjaman` p
+             WHERE p.`buku_id` = b.`buku_id` AND p.`status` = \'dipinjam\') AS `pinjaman_aktif`
      FROM `buku` b
      INNER JOIN `kategori` k ON k.`kategori_id` = b.`kategori_id`
      ' . $whereSql . '
@@ -316,18 +296,19 @@ $isEditing = $editingBook !== null || (isset($_POST['action'], $_POST['buku_id']
   <div class="table-wrap">
     <?php if ($books): ?>
       <table class="data-table">
-        <thead><tr><th>Cover / ISBN</th><th>Judul dan penulis</th><th>Penerbit</th><th>Tahun</th><th>Kategori</th><th>Rak</th><th>Stok</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Cover / ISBN</th><th>Judul dan penulis</th><th>Penerbit</th><th>Tahun</th><th>Kategori</th><th>Rak</th><th>Stok tersedia</th><th>Status</th><th>Aksi</th></tr></thead>
         <tbody>
           <?php foreach ($books as $book): ?>
             <tr>
               <td>
                 <div class="flex items-center gap-3">
-                  <?php if ($book['cover_path'] && digilibBookCoverPath($book['cover_path']) !== null): ?>
-                    <img class="h-14 w-11 rounded-lg border border-slate-100 object-cover" src="<?= digilibEscape(digilibUrl($uploadUrlPrefix . rawurlencode($book['cover_path']))) ?>" alt="Cover <?= digilibEscape($book['judul']) ?>">
+                  <?php $coverUrl = digilibBookCoverUrl(is_string($book['cover_path']) ? $book['cover_path'] : null); ?>
+                  <?php if ($coverUrl !== null): ?>
+                    <img class="h-14 w-11 rounded-lg border border-slate-100 object-cover" src="<?= digilibEscape($coverUrl) ?>" alt="Cover <?= digilibEscape($book['judul']) ?>">
                   <?php else: ?>
                     <div class="grid h-14 w-11 place-items-center rounded-lg bg-teal-50 text-teal-700">B</div>
                   <?php endif; ?>
-                  <span class="text-xs font-medium text-slate-600"><?= digilibEscape($book['isbn']) ?></span>
+                  <span class="text-xs font-medium text-slate-600"><?= digilibEscape($book['isbn'] ?? '—') ?></span>
                 </div>
               </td>
               <td><div class="font-bold text-ink"><?= digilibEscape($book['judul']) ?></div><div class="mt-1 text-xs text-slate-500"><?= digilibEscape($book['penulis']) ?></div></td>
@@ -335,7 +316,8 @@ $isEditing = $editingBook !== null || (isset($_POST['action'], $_POST['buku_id']
               <td><?= (int) $book['tahun_terbit'] ?></td>
               <td><span class="badge badge-blue"><?= digilibEscape($book['nama_kategori']) ?></span></td>
               <td><?= digilibEscape($book['rak']) ?></td>
-              <td><span class="badge <?= (int) $book['stok'] > 0 ? 'badge-green' : 'badge-red' ?>"><?= (int) $book['stok'] ?></span></td>
+              <td><span class="font-bold text-ink"><?= (int) $book['stok'] ?></span><span class="text-slate-400"> / <?= (int) $book['stok'] + (int) $book['pinjaman_aktif'] ?></span></td>
+              <td><span class="badge <?= (int) $book['stok'] > 0 ? 'badge-green' : ((int) $book['pinjaman_aktif'] > 0 ? 'badge-amber' : 'badge-red') ?>"><?= (int) $book['stok'] > 0 ? 'Tersedia' : ((int) $book['pinjaman_aktif'] > 0 ? 'Dipinjam' : 'Stok habis') ?></span></td>
               <td>
                 <div class="flex items-center gap-1">
                   <a class="icon-btn no-underline" href="<?= digilibEscape(digilibUrl('admin/buku.php?edit=' . (int) $book['buku_id'])) ?>#form-buku" title="Edit buku" aria-label="Edit <?= digilibEscape($book['judul']) ?>">✎</a>
@@ -378,7 +360,8 @@ $isEditing = $editingBook !== null || (isset($_POST['action'], $_POST['buku_id']
     <div><label class="field-label" for="rak">Rak *</label><input class="field" id="rak" name="rak" maxlength="30" value="<?= digilibEscape((string) ($formValues['rak'] ?? '')) ?>" placeholder="Contoh: A-01" required></div>
     <div><label class="field-label" for="stok">Stok *</label><input class="field" id="stok" name="stok" type="number" min="0" step="1" value="<?= digilibEscape((string) ($formValues['stok'] ?? '0')) ?>" required></div>
     <div><label class="field-label" for="cover">Cover buku</label><input class="field" id="cover" name="cover" type="file" accept="image/jpeg,image/png,image/webp"><span class="mt-1 block text-[11px] text-slate-400">JPG, PNG, atau WebP; maksimal 3 MB.</span>
-      <?php if ($isEditing && !empty($formValues['cover_path']) && digilibBookCoverPath((string) $formValues['cover_path']) !== null): ?><img class="mt-2 h-20 rounded-lg object-cover" src="<?= digilibEscape(digilibUrl($uploadUrlPrefix . rawurlencode((string) $formValues['cover_path']))) ?>" alt="Cover saat ini"><?php endif; ?>
+      <?php $currentCoverUrl = $isEditing ? digilibBookCoverUrl(isset($formValues['cover_path']) ? (string) $formValues['cover_path'] : null) : null; ?>
+      <?php if ($currentCoverUrl !== null): ?><img class="mt-2 h-20 rounded-lg object-cover" src="<?= digilibEscape($currentCoverUrl) ?>" alt="Cover saat ini"><?php endif; ?>
     </div>
     <div class="flex flex-wrap items-end gap-2 sm:col-span-2 xl:col-span-3">
       <button class="btn btn-primary" type="submit"><?= $isEditing ? 'Simpan perubahan' : 'Simpan buku' ?></button>

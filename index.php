@@ -5,10 +5,20 @@ require_once __DIR__ . '/config/auth.php';
 
 $sessionUser = $_SESSION['digilib_user'] ?? null;
 if (is_array($sessionUser) && isset($sessionUser['role'])) {
-    digilibRedirectForRole((string) $sessionUser['role']);
+  digilibRedirectForRole((string) $sessionUser['role']);
 }
 
-$errorMessage = '';
+$showLogin = $_SERVER['REQUEST_METHOD'] === 'POST'
+    || isset($_GET['login'])
+    || isset($_GET['account']);
+if (!$showLogin) {
+    require __DIR__ . '/includes/landing_page.php';
+    exit;
+}
+
+$errorMessage = isset($_GET['account']) && $_GET['account'] === 'inactive'
+    ? 'Status keanggotaan tidak aktif. Hubungi pustakawan.'
+    : '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!digilibVerifyCsrfToken($_POST['csrf_token'] ?? null)) {
         http_response_code(400);
@@ -16,10 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $email = filter_var(trim((string) ($_POST['email'] ?? '')), FILTER_VALIDATE_EMAIL);
         $password = (string) ($_POST['password'] ?? '');
-        $requestedRole = (string) ($_POST['role'] ?? '');
 
-        if ($email === false || $password === '' || !in_array($requestedRole, ['admin', 'anggota'], true)) {
-            $errorMessage = 'Email, kata sandi, dan jenis akun harus diisi dengan benar.';
+        if ($email === false || $password === '') {
+          $errorMessage = 'Email dan kata sandi harus diisi dengan benar.';
         } else {
             try {
                 $pdo = digilibDatabaseConnection();
@@ -32,12 +41,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $statement->execute(['email' => $email]);
                 $account = $statement->fetch();
 
-                $roleMatches = $account
-                    && ($requestedRole === 'anggota'
-                        ? $account['role'] === 'anggota'
-                        : in_array($account['role'], ['admin', 'pustakawan'], true));
+                $supportedRole = $account && in_array($account['role'], ['admin', 'pustakawan', 'anggota'], true);
 
-                if (!$account || !$roleMatches || $account['status'] !== 'aktif' || !password_verify($password, $account['password_hash'])) {
+                if (!$account || !$supportedRole || $account['status'] !== 'aktif' || !password_verify($password, $account['password_hash'])) {
                     $errorMessage = 'Email, kata sandi, atau jenis akun tidak sesuai.';
                 } else {
                     if ($account['role'] === 'anggota') {
@@ -50,7 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $errorMessage = 'Status keanggotaan tidak aktif. Hubungi pustakawan.';
                         }
                     }
-
                     if ($errorMessage === '') {
                         session_regenerate_id(true);
                         $_SESSION['digilib_user'] = [
@@ -65,13 +70,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (PDOException $exception) {
                 error_log('DIGILIB login database error: ' . $exception->getMessage());
                 http_response_code(503);
-                $errorMessage = 'Database belum dapat dihubungi. Pastikan MySQL Laragon aktif dan konfigurasi database benar.';
+                $errorMessage = 'Database belum dapat dihubungi. Periksa host, nama database, dan kredensial MySQL pada konfigurasi hosting.';
             }
         }
     }
 }
 
-$selectedRole = (string) ($_POST['role'] ?? 'admin');
 ?>
 <!doctype html>
 <html lang="id">
@@ -84,7 +88,7 @@ $selectedRole = (string) ($_POST['role'] ?? 'admin');
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="<?= digilibEscape(digilibUrl('assets/styles.css')) ?>">
+  <link rel="stylesheet" href="<?= digilibEscape(digilibUrl('assets/styles.css?v=' . (string) filemtime(__DIR__ . '/assets/styles.css'))) ?>">
 </head>
 <body class="bg-sand text-ink antialiased">
   <main class="login-bg login-page">
@@ -104,19 +108,13 @@ $selectedRole = (string) ($_POST['role'] ?? 'admin');
       </section>
       <section class="login-form-panel">
         <div class="login-form-heading">
+          <a class="login-back-link" href="<?= digilibEscape(digilibUrl('index.php')) ?>"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>Kembali ke beranda</a>
           <p class="mb-2 text-xs font-bold uppercase tracking-[.16em] text-teal-700">Selamat datang kembali</p>
           <h2 class="display-font text-2xl font-extrabold">Masuk ke akun Anda</h2>
-          <p class="mt-2 text-sm text-slate-500">Pilih jenis akun yang akan digunakan.</p>
+          <p class="mt-2 text-sm text-slate-500">Gunakan email dan kata sandi akun yang terdaftar.</p>
         </div>
-        <form method="post" action="<?= digilibEscape(digilibUrl('index.php')) ?>" class="space-y-5">
+        <form method="post" action="<?= digilibEscape(digilibUrl('index.php?login=1')) ?>" class="space-y-5">
           <input type="hidden" name="csrf_token" value="<?= digilibEscape(digilibCsrfToken()) ?>">
-          <div>
-            <label class="field-label" for="role">Masuk sebagai</label>
-            <select class="field" id="role" name="role" required>
-              <option value="admin" <?= $selectedRole === 'admin' ? 'selected' : '' ?>>Admin / Pustakawan</option>
-              <option value="anggota" <?= $selectedRole === 'anggota' ? 'selected' : '' ?>>Anggota</option>
-            </select>
-          </div>
           <div><label class="field-label" for="email">Email</label><input class="field" id="email" name="email" type="email" autocomplete="username" placeholder="nama@email.com" value="<?= digilibEscape((string) ($_POST['email'] ?? '')) ?>" required></div>
           <div><label class="field-label" for="password">Kata sandi</label><input class="field" id="password" name="password" type="password" autocomplete="current-password" placeholder="Masukkan kata sandi" required></div>
           <?php if ($errorMessage !== ''): ?>
@@ -125,16 +123,14 @@ $selectedRole = (string) ($_POST['role'] ?? 'admin');
           <button class="btn btn-primary w-full py-3" type="submit">Masuk ke perpustakaan</button>
         </form>
         <div class="mt-7 border-t border-slate-100 pt-5">
-          <div class="mb-3 text-xs font-bold text-slate-500">AKUN DEMO</div>
-          <div class="grid gap-2 sm:grid-cols-2">
-            <button class="rounded-xl border border-slate-200 p-3 text-left hover:border-teal-400 hover:bg-teal-50" type="button" data-demo-role="admin" data-demo-email="admin@digilib.id" data-demo-password="admin123"><span class="block text-xs font-bold text-slate-700">Admin / Pustakawan</span><span class="mt-1 block text-[11px] text-slate-500">admin@digilib.id</span></button>
-            <button class="rounded-xl border border-slate-200 p-3 text-left hover:border-teal-400 hover:bg-teal-50" type="button" data-demo-role="anggota" data-demo-email="anggota@digilib.id" data-demo-password="anggota123"><span class="block text-xs font-bold text-slate-700">Anggota</span><span class="mt-1 block text-[11px] text-slate-500">anggota@digilib.id</span></button>
+          <div class="mb-3 text-xs font-bold text-slate-500">AKUN USER</div>
+          <div class="grid gap-2">
+            <button class="rounded-xl border border-slate-200 p-3 text-left hover:border-teal-400 hover:bg-teal-50" type="button" data-demo-user data-demo-email="anggota@digilib.id" data-demo-password="anggota123"><span class="block text-xs font-bold text-slate-700">User</span><span class="mt-1 block text-[11px] text-slate-500">anggota@digilib.id</span></button>
           </div>
         </div>
         <script>
-          document.querySelectorAll('[data-demo-role]').forEach((button) => {
+          document.querySelectorAll('[data-demo-user]').forEach((button) => {
             button.addEventListener('click', () => {
-              document.getElementById('role').value = button.dataset.demoRole;
               document.getElementById('email').value = button.dataset.demoEmail;
               document.getElementById('password').value = button.dataset.demoPassword;
               document.getElementById('password').focus();

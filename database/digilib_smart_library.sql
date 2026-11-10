@@ -1,9 +1,3 @@
-CREATE DATABASE IF NOT EXISTS `digilib_smart_library`
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE `digilib_smart_library`;
-
 CREATE TABLE IF NOT EXISTS `users` (
   `user_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `nama_lengkap` VARCHAR(120) NOT NULL,
@@ -130,7 +124,7 @@ CREATE TABLE IF NOT EXISTS `denda` (
 
 INSERT INTO `users` (`nama_lengkap`, `email`, `password_hash`, `role`, `status`)
 VALUES
-  ('Admin DIGILIB', 'admin@digilib.id', '$2y$10$BVBjSweZ2cBE2dmHWAM9X.yfCormLOHn.oacvbzFE8uZq.rddogWi', 'admin', 'aktif'),
+  ('Admin DIGILIB', 'keibuildsbiztech@gmail.com', '$2y$10$3L74riQfcvl7eML7Tk6/2.zyiNTLlxaaP1NpicVSLng69uBYs9fEu', 'admin', 'aktif'),
   ('Anggota Demo', 'anggota@digilib.id', '$2y$10$Udzd3p4p4I9yEoujkDFHiupT7Y0jNoVvioBT8n9P2WWitZBktAn5S', 'anggota', 'aktif')
 ON DUPLICATE KEY UPDATE
   `nama_lengkap` = VALUES(`nama_lengkap`),

@@ -11,10 +11,16 @@ $activePage = 'dashboard';
 $lowStockLimit = 3;
 $statsStatement = $pdo->prepare(
     'SELECT
-        (SELECT COUNT(*) FROM `buku`) AS `total_buku`,
+        (SELECT COUNT(*) FROM `buku` WHERE `status` = \'aktif\') AS `total_judul`,
+        (SELECT COALESCE(SUM(`stok`), 0) FROM `buku` WHERE `status` = \'aktif\') AS `total_eksemplar`,
         (SELECT COUNT(*) FROM `anggota`) AS `total_anggota`,
+        (SELECT COUNT(*) FROM `anggota` WHERE `status` = \'aktif\') AS `anggota_aktif`,
         (SELECT COUNT(*) FROM `peminjaman` WHERE `status` = \'dipinjam\') AS `buku_dipinjam`,
-        (SELECT COALESCE(SUM(`jumlah_denda`), 0) FROM `denda`) AS `total_denda`,
+        (SELECT COUNT(*) FROM `peminjaman`
+         WHERE `status` = \'dipinjam\' AND `tanggal_jatuh_tempo` < CURRENT_DATE) AS `terlambat`,
+        (SELECT COALESCE(SUM(`jumlah_denda`), 0) FROM `denda`
+         WHERE `status_pembayaran` = \'belum_dibayar\') AS `denda_belum_dibayar`,
+        (SELECT COUNT(*) FROM `denda` WHERE `status_pembayaran` = \'belum_dibayar\') AS `transaksi_denda`,
         (SELECT COUNT(*) FROM `buku` WHERE `status` = \'aktif\' AND `stok` <= :batas_stok) AS `stok_rendah`'
 );
 $statsStatement->execute(['batas_stok' => $lowStockLimit]);
@@ -54,6 +60,17 @@ if ($loanStats === false) {
     throw new RuntimeException('Loan statistics could not be loaded.');
 }
 
+$recentLoans = $pdo->query(
+    'SELECT p.`peminjaman_id`, p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`, p.`status`,
+            u.`nama_lengkap`, b.`judul`
+     FROM `peminjaman` p
+     INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
+     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
+     INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
+     ORDER BY p.`tanggal_pinjam` DESC, p.`peminjaman_id` DESC
+     LIMIT 5'
+)->fetchAll();
+
 $categoryChartData = [
     'labels' => array_column($categoryStats, 'nama_kategori'),
     'values' => array_map('intval', array_column($categoryStats, 'jumlah_buku')),
@@ -69,31 +86,30 @@ $loanChartData = [
 ];
 ?>
 <?php require __DIR__ . '/../includes/portal_header.php'; ?>
-<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
   <article class="card-shadow rounded-2xl border border-slate-100 bg-white p-5">
-    <p class="text-xs font-semibold text-slate-500">Total buku</p>
-    <p class="display-font mt-3 text-3xl font-extrabold text-ink"><?= number_format((int) $stats['total_buku'], 0, ',', '.') ?></p>
-    <a class="mt-3 inline-block text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/buku.php')) ?>">Kelola data buku</a>
+    <p class="text-xs font-semibold text-slate-500">Total koleksi buku</p>
+    <p class="display-font mt-3 text-3xl font-extrabold text-ink"><?= number_format((int) $stats['total_eksemplar'], 0, ',', '.') ?></p>
+    <p class="mt-1 text-[11px] text-slate-400"><?= number_format((int) $stats['total_judul'], 0, ',', '.') ?> judul dalam katalog</p>
+    <a class="mt-3 inline-block text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/buku.php')) ?>">Kelola koleksi buku</a>
   </article>
   <article class="card-shadow rounded-2xl border border-slate-100 bg-white p-5">
-    <p class="text-xs font-semibold text-slate-500">Total anggota</p>
+    <p class="text-xs font-semibold text-slate-500">Anggota terdaftar</p>
     <p class="display-font mt-3 text-3xl font-extrabold text-ink"><?= number_format((int) $stats['total_anggota'], 0, ',', '.') ?></p>
+    <p class="mt-1 text-[11px] text-slate-400"><?= number_format((int) $stats['anggota_aktif'], 0, ',', '.') ?> anggota aktif</p>
     <a class="mt-3 inline-block text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/anggota.php')) ?>">Kelola data anggota</a>
   </article>
   <article class="card-shadow rounded-2xl border border-slate-100 bg-white p-5">
-    <p class="text-xs font-semibold text-slate-500">Buku sedang dipinjam</p>
+    <p class="text-xs font-semibold text-slate-500">Sedang dipinjam</p>
     <p class="display-font mt-3 text-3xl font-extrabold text-ink"><?= number_format((int) $stats['buku_dipinjam'], 0, ',', '.') ?></p>
-    <a class="mt-3 inline-block text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/peminjaman.php')) ?>">Lihat transaksi</a>
+    <p class="mt-1 text-[11px] text-slate-400"><?= number_format((int) $stats['terlambat'], 0, ',', '.') ?> peminjaman terlambat</p>
+    <a class="mt-3 inline-block text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/peminjaman.php')) ?>">Pantau peminjaman</a>
   </article>
   <article class="card-shadow rounded-2xl border border-slate-100 bg-white p-5">
-    <p class="text-xs font-semibold text-slate-500">Total denda tercatat</p>
-    <p class="display-font mt-3 text-3xl font-extrabold text-ink">Rp<?= number_format((float) $stats['total_denda'], 0, ',', '.') ?></p>
-    <a class="mt-3 inline-block text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/denda.php')) ?>">Lihat rincian denda</a>
-  </article>
-  <article class="card-shadow rounded-2xl border border-amber-100 bg-amber-50 p-5">
-    <p class="text-xs font-semibold text-amber-800">Stok rendah (1–3)</p>
-    <p class="display-font mt-3 text-3xl font-extrabold text-amber-900"><?= number_format((int) $stats['stok_rendah'], 0, ',', '.') ?></p>
-    <p class="mt-3 text-xs text-amber-800">Judul buku aktif perlu diperiksa</p>
+    <p class="text-xs font-semibold text-slate-500">Denda belum dibayar</p>
+    <p class="display-font mt-3 text-3xl font-extrabold text-ink">Rp<?= number_format((float) $stats['denda_belum_dibayar'], 0, ',', '.') ?></p>
+    <p class="mt-1 text-[11px] text-slate-400"><?= number_format((int) $stats['transaksi_denda'], 0, ',', '.') ?> transaksi denda</p>
+    <a class="mt-3 inline-block text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/denda.php')) ?>">Lihat denda</a>
   </article>
 </div>
 
@@ -103,10 +119,55 @@ $loanChartData = [
       <h2 class="display-font text-sm font-extrabold text-ink">Koleksi berdasarkan kategori</h2>
       <p class="mt-1 text-xs text-slate-500">Jumlah buku pada setiap kategori, diperbarui dari database.</p>
     </div>
-    <div class="relative mx-auto h-72 max-w-lg">
+    <div class="relative mx-auto h-72 w-full max-w-lg">
       <canvas id="category-chart" aria-label="Grafik jumlah buku berdasarkan kategori" role="img"></canvas>
     </div>
   </section>
+  <section class="card-shadow rounded-2xl border border-slate-100 bg-white p-5 sm:p-6">
+    <div class="mb-5">
+      <div class="flex items-start justify-between gap-3">
+        <div><h2 class="display-font text-sm font-extrabold text-ink">Akses cepat</h2><p class="mt-1 text-xs text-slate-500">Kelola kegiatan perpustakaan.</p></div>
+        <span class="badge badge-green">DIGILIB</span>
+      </div>
+    </div>
+    <div class="grid gap-3">
+      <a class="flex items-center gap-3 rounded-xl border border-slate-100 p-3 no-underline transition hover:border-teal-200 hover:bg-teal-50" href="<?= digilibEscape(digilibUrl('admin/buku.php')) ?>"><span class="grid h-10 w-10 place-items-center rounded-xl bg-teal-50 font-bold text-teal-700">▤</span><span><b class="block text-xs text-ink">Koleksi buku</b><small class="text-[11px] text-slate-400">Atur katalog buku</small></span></a>
+      <a class="flex items-center gap-3 rounded-xl border border-slate-100 p-3 no-underline transition hover:border-blue-200 hover:bg-blue-50" href="<?= digilibEscape(digilibUrl('admin/anggota.php')) ?>"><span class="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 font-bold text-blue-700">♙</span><span><b class="block text-xs text-ink">Data anggota</b><small class="text-[11px] text-slate-400">Kelola keanggotaan</small></span></a>
+      <a class="flex items-center gap-3 rounded-xl border border-slate-100 p-3 no-underline transition hover:border-amber-200 hover:bg-amber-50" href="<?= digilibEscape(digilibUrl('admin/pengembalian.php')) ?>"><span class="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 font-bold text-amber-700">↩</span><span><b class="block text-xs text-ink">Proses pengembalian</b><small class="text-[11px] text-slate-400"><?= number_format((int) $stats['buku_dipinjam'], 0, ',', '.') ?> buku aktif dipinjam</small></span></a>
+      <a class="flex items-center gap-3 rounded-xl border border-slate-100 p-3 no-underline transition hover:border-rose-200 hover:bg-rose-50" href="<?= digilibEscape(digilibUrl('admin/laporan.php')) ?>"><span class="grid h-10 w-10 place-items-center rounded-xl bg-rose-50 font-bold text-rose-700">▥</span><span><b class="block text-xs text-ink">Lihat laporan</b><small class="text-[11px] text-slate-400">Cetak ringkasan data</small></span></a>
+    </div>
+  </section>
+</div>
+
+<section class="card-shadow mt-6 overflow-hidden rounded-2xl border border-slate-100 bg-white">
+  <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+    <div><h2 class="display-font text-sm font-extrabold text-ink">Aktivitas peminjaman terbaru</h2><p class="mt-1 text-xs text-slate-500">Transaksi terbaru dari seluruh anggota.</p></div>
+    <a class="text-xs font-bold text-teal-700 no-underline hover:underline" href="<?= digilibEscape(digilibUrl('admin/peminjaman.php')) ?>">Lihat semua →</a>
+  </div>
+  <?php if ($recentLoans): ?>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Buku</th><th>Anggota</th><th>Tanggal pinjam</th><th>Batas kembali</th><th>Status</th></tr></thead>
+        <tbody>
+          <?php foreach ($recentLoans as $loan): ?>
+            <?php $late = $loan['status'] === 'dipinjam' && $loan['tanggal_jatuh_tempo'] < date('Y-m-d'); ?>
+            <tr>
+              <td class="font-semibold text-ink"><?= digilibEscape($loan['judul']) ?></td>
+              <td><?= digilibEscape($loan['nama_lengkap']) ?></td>
+              <td><?= digilibEscape((new DateTimeImmutable($loan['tanggal_pinjam']))->format('d-m-Y')) ?></td>
+              <td><?= digilibEscape((new DateTimeImmutable($loan['tanggal_jatuh_tempo']))->format('d-m-Y')) ?></td>
+              <td><span class="badge <?= $late ? 'badge-red' : ($loan['status'] === 'dipinjam' ? 'badge-amber' : 'badge-green') ?>"><?= $late ? 'Terlambat' : digilibEscape(ucfirst($loan['status'])) ?></span></td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php else: ?>
+    <p class="px-5 py-8 text-center text-sm text-slate-500">Belum ada aktivitas peminjaman.</p>
+  <?php endif; ?>
+</section>
+
+<div class="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
   <section class="card-shadow rounded-2xl border border-slate-100 bg-white p-5 sm:p-6">
     <div class="mb-5">
       <h2 class="display-font text-sm font-extrabold text-ink">Statistik peminjaman</h2>
@@ -116,8 +177,6 @@ $loanChartData = [
       <canvas id="loan-chart" aria-label="Grafik statistik status peminjaman" role="img"></canvas>
     </div>
   </section>
-</div>
-
 <section class="card-shadow mt-6 overflow-hidden rounded-2xl border border-slate-100 bg-white">
   <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
     <div>
@@ -146,6 +205,7 @@ $loanChartData = [
     <p class="px-5 py-8 text-center text-sm text-slate-500">Tidak ada buku aktif dengan stok rendah.</p>
   <?php endif; ?>
 </section>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
@@ -162,7 +222,13 @@ $loanChartData = [
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 18 } } }
+      plugins: {
+        legend: {
+          position: 'right',
+          align: 'center',
+          labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, padding: 14 }
+        }
+      }
     }
   });
 

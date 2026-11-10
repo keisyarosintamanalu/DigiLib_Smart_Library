@@ -15,6 +15,9 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
 function digilibEscape(string $value): string
 {
     return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -66,7 +69,7 @@ function digilibRequireRole(array $allowedRoles): array
 {
     $user = $_SESSION['digilib_user'] ?? null;
     if (!is_array($user) || !isset($user['user_id'], $user['role']) || !in_array($user['role'], $allowedRoles, true)) {
-        header('Location: ' . digilibUrl('index.php'), true, 303);
+        header('Location: ' . digilibUrl('index.php?login=1'), true, 303);
         exit;
     }
 

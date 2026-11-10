@@ -1,5 +1,3 @@
-USE `digilib_smart_library`;
-
 ALTER TABLE `buku`
   ADD COLUMN `isbn` VARCHAR(20) NULL AFTER `kategori_id`,
   ADD COLUMN `cover_path` VARCHAR(255) NULL AFTER `stok`,

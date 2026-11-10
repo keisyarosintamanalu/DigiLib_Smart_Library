@@ -18,7 +18,7 @@ $isAdmin = in_array($portalUser['role'] ?? '', ['admin', 'pustakawan'], true);
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="<?= digilibEscape(digilibUrl('assets/styles.css')) ?>">
+  <link rel="stylesheet" href="<?= digilibEscape(digilibUrl('assets/styles.css?v=' . (string) filemtime(__DIR__ . '/../assets/styles.css'))) ?>">
 </head>
 <body class="min-h-screen bg-sand text-ink antialiased">
   <div class="app-shell flex">
@@ -35,6 +35,12 @@ $isAdmin = in_array($portalUser['role'] ?? '', ['admin', 'pustakawan'], true);
           <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>
           <span class="nav-label">Dashboard</span>
         </a>
+        <?php if (!$isAdmin): ?>
+          <a class="nav-link <?= $activePage === 'books' ? 'active' : '' ?> flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-500 no-underline" href="<?= digilibUrl('anggota/buku.php') ?>">
+            <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16M8 7h8"/></svg></span>
+            <span class="nav-label">Data Buku</span>
+          </a>
+        <?php endif; ?>
         <a class="nav-link <?= $activePage === 'loans' ? 'active' : '' ?> flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-500 no-underline" href="<?= digilibUrl($isAdmin ? 'admin/peminjaman.php' : 'anggota/peminjaman.php') ?>">
           <span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg></span>
           <span class="nav-label">Peminjaman</span>
