@@ -2,9 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
-require_once __DIR__ . '/../config/supabase_storage.php';
+require_once __DIR__ . '/../config/book_covers.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
-$pdo = digilibDatabaseConnection();
 $portalTitle = 'Data Buku';
 $portalDescription = 'Kelola katalog buku perpustakaan.';
 $activePage = 'books';
@@ -33,23 +32,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errorMessage = 'Data buku yang akan dihapus tidak valid.';
             } else {
                 try {
-                    $statement = $pdo->prepare('SELECT `cover_path` FROM `buku` WHERE `buku_id` = :id');
-                    $statement->execute(['id' => $bookId]);
-                    $bookToDelete = $statement->fetch();
+                    $bookToDelete = digilibDatabaseTransaction(static function (array &$database) use ($bookId): ?array {
+                        $book = digilibDatabaseRecord($database, 'buku', 'buku_id', (int) $bookId);
+                        if ($book === null) {
+                            return null;
+                        }
+                        foreach ($database['peminjaman'] as $loan) {
+                            if ((int) $loan['buku_id'] === (int) $bookId) {
+                                throw new DomainException('book_has_loans');
+                            }
+                        }
+                        $database['buku'] = array_values(array_filter(
+                            $database['buku'],
+                            static function (array $record) use ($bookId): bool {
+                                return (int) $record['buku_id'] !== (int) $bookId;
+                            }
+                        ));
+                        return $book;
+                    });
                     if (!$bookToDelete) {
                         $errorMessage = 'Buku yang akan dihapus tidak ditemukan.';
                     } else {
-                        $delete = $pdo->prepare('DELETE FROM `buku` WHERE `buku_id` = :id');
-                        $delete->execute(['id' => $bookId]);
                         digilibRemoveBookCover($bookToDelete['cover_path']);
                         $_SESSION['books_success'] = 'Buku berhasil dihapus.';
                         digilibBookRedirect();
                     }
-                } catch (PDOException $exception) {
-                    error_log('DIGILIB book delete database error: ' . $exception->getMessage());
-                    $errorMessage = $exception->getCode() === '23000'
+                } catch (DomainException $exception) {
+                    $errorMessage = $exception->getMessage() === 'book_has_loans'
                         ? 'Buku tidak dapat dihapus karena masih digunakan dalam transaksi peminjaman.'
-                        : 'Buku gagal dihapus karena terjadi kesalahan database.';
+                        : 'Buku gagal dihapus.';
+                } catch (RuntimeException $exception) {
+                    error_log('DIGILIB book delete JSON database error: ' . $exception->getMessage());
+                    $errorMessage = 'Buku gagal dihapus karena terjadi kesalahan penyimpanan.';
                 }
             }
         } elseif ($action === 'save') {
@@ -76,9 +90,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $maximumYear = (int) date('Y') + 1;
 
             if ($errorMessage === '' && $isEditing) {
-                $editStatement = $pdo->prepare('SELECT * FROM `buku` WHERE `buku_id` = :id');
-                $editStatement->execute(['id' => $bookId]);
-                $editingBook = $editStatement->fetch() ?: null;
+                $database = digilibDatabaseRead();
+                $editingBook = digilibDatabaseRecord($database, 'buku', 'buku_id', (int) $bookId);
                 if ($editingBook === null) {
                     http_response_code(404);
                     $errorMessage = 'Buku yang akan diedit tidak ditemukan.';
@@ -95,9 +108,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     || $formValues['rak'] === '' || mb_strlen($formValues['rak']) > 30) {
                     $errorMessage = 'Periksa kembali semua kolom. ISBN, judul, penulis, penerbit, tahun, kategori, rak, dan stok harus valid.';
                 } else {
-                    $categoryExists = $pdo->prepare('SELECT 1 FROM `kategori` WHERE `kategori_id` = :id');
-                    $categoryExists->execute(['id' => $categoryId]);
-                    if (!$categoryExists->fetchColumn()) {
+                    $database = digilibDatabaseRead();
+                    if (digilibDatabaseRecord($database, 'kategori', 'kategori_id', (int) $categoryId) === null) {
                         $errorMessage = 'Kategori yang dipilih tidak tersedia.';
                     }
                 }
@@ -124,14 +136,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $errorMessage = 'Format cover harus berupa gambar JPG, PNG, atau WebP.';
                     } else {
                         try {
-                            $newCoverPath = digilibUploadBookCover(
-                                $coverUpload['tmp_name'],
-                                $mimeType,
-                                $allowedTypes[$mimeType]
-                            );
+                            $newCoverPath = digilibUploadBookCover($coverUpload['tmp_name'], $allowedTypes[$mimeType]);
                         } catch (RuntimeException $exception) {
                             error_log('DIGILIB book cover upload failed: ' . $exception->getMessage());
-                            $errorMessage = 'Cover gagal disimpan ke Supabase Storage. Periksa konfigurasi kunci dan bucket Supabase.';
+                            $errorMessage = 'Cover gagal disimpan. Periksa izin folder uploads/covers.';
                         }
                     }
                 }
@@ -140,60 +148,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($errorMessage === '') {
                 $coverPath = $newCoverPath ?? $oldCoverFilename;
                 try {
-                    if ($isEditing) {
-                        $statement = $pdo->prepare(
-                            'UPDATE `buku`
-                             SET `isbn` = :isbn, `judul` = :judul, `penulis` = :penulis,
-                                 `penerbit` = :penerbit, `tahun_terbit` = :tahun_terbit,
-                                 `kategori_id` = :kategori_id, `rak` = :rak, `stok` = :stok,
-                                 `cover_path` = :cover_path
-                             WHERE `buku_id` = :buku_id'
-                        );
-                        $statement->execute([
-                            'isbn' => $isbn,
-                            'judul' => $formValues['judul'],
-                            'penulis' => $formValues['penulis'],
-                            'penerbit' => $formValues['penerbit'],
-                            'tahun_terbit' => $year,
-                            'kategori_id' => $categoryId,
-                            'rak' => $formValues['rak'],
-                            'stok' => $stock,
-                            'cover_path' => $coverPath,
-                            'buku_id' => $bookId,
-                        ]);
-                        if ($newCoverPath !== null) {
-                            digilibRemoveBookCover($oldCoverFilename);
+                    $bookData = digilibDatabaseTransaction(static function (array &$database) use (
+                        $isEditing,
+                        $bookId,
+                        $isbn,
+                        $formValues,
+                        $year,
+                        $categoryId,
+                        $stock,
+                        $coverPath
+                    ): array {
+                        foreach ($database['buku'] as $existingBook) {
+                            if ((string) ($existingBook['isbn'] ?? '') === $isbn
+                                && (!$isEditing || (int) $existingBook['buku_id'] !== (int) $bookId)) {
+                                throw new DomainException('duplicate_isbn');
+                            }
                         }
-                        $_SESSION['books_success'] = 'Perubahan buku berhasil disimpan.';
-                    } else {
-                        $statement = $pdo->prepare(
-                            'INSERT INTO `buku`
-                                (`isbn`, `judul`, `penulis`, `penerbit`, `tahun_terbit`, `kategori_id`, `rak`, `stok`, `cover_path`)
-                             VALUES
-                                (:isbn, :judul, :penulis, :penerbit, :tahun_terbit, :kategori_id, :rak, :stok, :cover_path)'
-                        );
-                        $statement->execute([
+
+                        $timestamp = digilibDatabaseTimestamp();
+                        $book = [
                             'isbn' => $isbn,
                             'judul' => $formValues['judul'],
                             'penulis' => $formValues['penulis'],
                             'penerbit' => $formValues['penerbit'],
-                            'tahun_terbit' => $year,
-                            'kategori_id' => $categoryId,
+                            'tahun_terbit' => (int) $year,
+                            'kategori_id' => (int) $categoryId,
                             'rak' => $formValues['rak'],
-                            'stok' => $stock,
+                            'stok' => (int) $stock,
                             'cover_path' => $coverPath,
-                        ]);
-                        $_SESSION['books_success'] = 'Buku berhasil ditambahkan ke katalog.';
+                            'status' => 'aktif',
+                            'updated_at' => $timestamp,
+                        ];
+                        if ($isEditing) {
+                            foreach ($database['buku'] as &$existingBook) {
+                                if ((int) $existingBook['buku_id'] === (int) $bookId) {
+                                    $book['buku_id'] = (int) $bookId;
+                                    $book['created_at'] = $existingBook['created_at'] ?? $timestamp;
+                                    $existingBook = $book;
+                                    break;
+                                }
+                            }
+                            unset($existingBook);
+                        } else {
+                            $book['buku_id'] = digilibDatabaseNextId($database, 'buku', 'buku_id');
+                            $book['created_at'] = $timestamp;
+                            $database['buku'][] = $book;
+                        }
+                        return $book;
+                    });
+                    if ($newCoverPath !== null) {
+                        digilibRemoveBookCover($oldCoverFilename);
                     }
+                    $_SESSION['books_success'] = $isEditing
+                        ? 'Perubahan buku berhasil disimpan.'
+                        : 'Buku berhasil ditambahkan ke katalog.';
                     digilibBookRedirect();
-                } catch (PDOException $exception) {
+                } catch (DomainException $exception) {
                     if ($newCoverPath !== null) {
                         digilibRemoveBookCover($newCoverPath);
                     }
-                    error_log('DIGILIB book save database error: ' . $exception->getMessage());
-                    $errorMessage = $exception->getCode() === '23000'
+                    $errorMessage = $exception->getMessage() === 'duplicate_isbn'
                         ? 'ISBN tersebut sudah digunakan oleh buku lain.'
-                        : 'Data buku gagal disimpan karena terjadi kesalahan database.';
+                        : 'Data buku gagal disimpan.';
+                } catch (RuntimeException $exception) {
+                    if ($newCoverPath !== null) {
+                        digilibRemoveBookCover($newCoverPath);
+                    }
+                    error_log('DIGILIB book save JSON database error: ' . $exception->getMessage());
+                    $errorMessage = 'Data buku gagal disimpan karena terjadi kesalahan penyimpanan.';
                 }
             }
         } else {
@@ -205,49 +227,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $requestedEditId = filter_var($_GET['edit'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $requestedEditId !== false && $requestedEditId !== null) {
-    $editStatement = $pdo->prepare('SELECT * FROM `buku` WHERE `buku_id` = :id');
-    $editStatement->execute(['id' => $requestedEditId]);
-    $editingBook = $editStatement->fetch() ?: null;
+    $database = digilibDatabaseRead();
+    $editingBook = digilibDatabaseRecord($database, 'buku', 'buku_id', (int) $requestedEditId);
     if ($editingBook === null) {
         http_response_code(404);
         $errorMessage = 'Buku yang akan diedit tidak ditemukan.';
     }
 }
 
-$categories = $pdo->query('SELECT `kategori_id`, `nama_kategori` FROM `kategori` ORDER BY `nama_kategori`')->fetchAll();
+$database = digilibDatabaseRead();
+$categories = $database['kategori'];
+usort($categories, static function (array $left, array $right): int {
+    return strcasecmp($left['nama_kategori'], $right['nama_kategori']);
+});
 $search = trim((string) ($_GET['q'] ?? ''));
 $categoryFilter = filter_var($_GET['kategori'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 if ($categoryFilter === false) {
     $categoryFilter = null;
 }
 
-$conditions = [];
-$parameters = [];
-if ($search !== '') {
-    $conditions[] = '(b.`isbn` LIKE :search_isbn OR b.`judul` LIKE :search_judul OR b.`penulis` LIKE :search_penulis OR b.`penerbit` LIKE :search_penerbit)';
-    $term = '%' . $search . '%';
-    $parameters['search_isbn'] = $term;
-    $parameters['search_judul'] = $term;
-    $parameters['search_penulis'] = $term;
-    $parameters['search_penerbit'] = $term;
+$books = [];
+foreach ($database['buku'] as $bookRecord) {
+    if ($categoryFilter !== null && (int) $bookRecord['kategori_id'] !== (int) $categoryFilter) {
+        continue;
+    }
+    if ($search !== '') {
+        $haystack = implode(' ', [
+            $bookRecord['isbn'] ?? '',
+            $bookRecord['judul'] ?? '',
+            $bookRecord['penulis'] ?? '',
+            $bookRecord['penerbit'] ?? '',
+        ]);
+        if (stripos($haystack, $search) === false) {
+            continue;
+        }
+    }
+    $bookRecord['nama_kategori'] = '';
+    foreach ($categories as $category) {
+        if ((int) $category['kategori_id'] === (int) $bookRecord['kategori_id']) {
+            $bookRecord['nama_kategori'] = $category['nama_kategori'];
+            break;
+        }
+    }
+    $bookRecord['pinjaman_aktif'] = 0;
+    foreach ($database['peminjaman'] as $loan) {
+        if ((int) $loan['buku_id'] === (int) $bookRecord['buku_id'] && $loan['status'] === 'dipinjam') {
+            $bookRecord['pinjaman_aktif']++;
+        }
+    }
+    $books[] = $bookRecord;
 }
-if ($categoryFilter !== null) {
-    $conditions[] = 'b.`kategori_id` = :kategori_id';
-    $parameters['kategori_id'] = $categoryFilter;
-}
-$whereSql = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
-$listStatement = $pdo->prepare(
-    'SELECT b.`buku_id`, b.`isbn`, b.`judul`, b.`penulis`, b.`penerbit`, b.`tahun_terbit`,
-            b.`rak`, b.`stok`, b.`cover_path`, k.`nama_kategori`,
-            (SELECT COUNT(*) FROM `peminjaman` p
-             WHERE p.`buku_id` = b.`buku_id` AND p.`status` = \'dipinjam\') AS `pinjaman_aktif`
-     FROM `buku` b
-     INNER JOIN `kategori` k ON k.`kategori_id` = b.`kategori_id`
-     ' . $whereSql . '
-     ORDER BY b.`judul` ASC, b.`buku_id` DESC'
-);
-$listStatement->execute($parameters);
-$books = $listStatement->fetchAll();
+usort($books, static function (array $left, array $right): int {
+    $titleOrder = strcasecmp($left['judul'], $right['judul']);
+    return $titleOrder !== 0 ? $titleOrder : ((int) $right['buku_id'] <=> (int) $left['buku_id']);
+});
 
 if ($editingBook !== null) {
     $formValues = array_merge($editingBook, $formValues);

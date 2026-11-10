@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Denda dan Pengembalian';
 $portalDescription = 'Lihat tanggal kembali, detail keterlambatan, dan status pembayaran denda.';
 $activePage = 'fines';
@@ -27,63 +27,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errorMessage = 'Data denda yang dipilih tidak valid.';
         } else {
             try {
-                $pdo->beginTransaction();
-                $statement = $pdo->prepare(
-                    "SELECT `denda_id`, `jumlah_denda`, `status_pembayaran`
-                     FROM `denda`
-                     WHERE `denda_id` = :denda_id
-                     FOR UPDATE"
-                );
-                $statement->execute(['denda_id' => $fineId]);
-                $fine = $statement->fetch();
-                if (!$fine) {
-                    $pdo->rollBack();
-                    $errorMessage = 'Data denda tidak ditemukan.';
-                } elseif ($fine['status_pembayaran'] === 'lunas') {
-                    $pdo->rollBack();
-                    $errorMessage = 'Denda tersebut sudah berstatus lunas.';
-                } elseif ((float) $fine['jumlah_denda'] <= 0) {
-                    $pdo->rollBack();
-                    $errorMessage = 'Denda dengan nominal Rp0 tidak memerlukan pembayaran.';
-                } else {
-                    $update = $pdo->prepare(
-                        "UPDATE `denda`
-                         SET `status_pembayaran` = 'lunas', `tanggal_pembayaran` = CURRENT_DATE
-                         WHERE `denda_id` = :denda_id AND `status_pembayaran` = 'belum_dibayar'"
-                    );
-                    $update->execute(['denda_id' => $fineId]);
-                    if ($update->rowCount() !== 1) {
-                        throw new RuntimeException('Fine payment status changed while being processed.');
+                digilibDatabaseTransaction(static function (array &$database) use ($fineId): void {
+                    foreach ($database['denda'] as &$fine) {
+                        if ((int) $fine['denda_id'] !== (int) $fineId) {
+                            continue;
+                        }
+                        if ($fine['status_pembayaran'] === 'lunas') {
+                            throw new DomainException('already_paid');
+                        }
+                        if ((float) $fine['jumlah_denda'] <= 0) {
+                            throw new DomainException('zero_amount');
+                        }
+                        $fine['status_pembayaran'] = 'lunas';
+                        $fine['tanggal_pembayaran'] = digilibDatabaseToday();
+                        break;
                     }
-                    $pdo->commit();
-                    $_SESSION['fines_success'] = 'Pembayaran denda berhasil dicatat menggunakan tanggal database.';
-                    digilibFineRedirect();
-                }
-            } catch (Throwable $exception) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                error_log('DIGILIB fine payment error: ' . $exception->getMessage());
+                    unset($fine);
+                    if (!digilibDatabaseRecord($database, 'denda', 'denda_id', (int) $fineId)) {
+                        throw new DomainException('fine_missing');
+                    }
+                });
+                $_SESSION['fines_success'] = 'Pembayaran denda berhasil dicatat menggunakan tanggal database JSON.';
+                digilibFineRedirect();
+            } catch (DomainException $exception) {
+                $errorMessage = [
+                    'already_paid' => 'Denda tersebut sudah berstatus lunas.',
+                    'zero_amount' => 'Denda dengan nominal Rp0 tidak memerlukan pembayaran.',
+                    'fine_missing' => 'Data denda tidak ditemukan.',
+                ][$exception->getMessage()] ?? 'Status pembayaran tidak dapat diperbarui.';
+            } catch (RuntimeException $exception) {
+                error_log('DIGILIB fine payment JSON database error: ' . $exception->getMessage());
                 $errorMessage = 'Status pembayaran tidak dapat diperbarui. Tidak ada perubahan yang disimpan.';
             }
         }
     }
 }
 
-$fines = $pdo->query(
-    'SELECT d.`denda_id`, d.`jumlah_hari_terlambat`, d.`tarif_per_hari`, d.`jumlah_denda`,
-            d.`status_pembayaran`, d.`tanggal_pembayaran`,
-            r.`tanggal_kembali`, p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`,
-            u.`nama_lengkap`, u.`email`, a.`nomor_anggota`,
-            b.`judul`, b.`isbn`
-     FROM `denda` d
-     INNER JOIN `pengembalian` r ON r.`pengembalian_id` = d.`pengembalian_id`
-     INNER JOIN `peminjaman` p ON p.`peminjaman_id` = r.`peminjaman_id`
-     INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
-     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-     INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
-     ORDER BY r.`tanggal_kembali` DESC, d.`denda_id` DESC'
-)->fetchAll();
+$database = digilibDatabaseRead();
+$fines = [];
+foreach ($database['denda'] as $fine) {
+    $returnRecord = digilibDatabaseRecord($database, 'pengembalian', 'pengembalian_id', (int) $fine['pengembalian_id']);
+    $loan = $returnRecord === null
+        ? null
+        : digilibDatabaseLoanRecord($database, (int) $returnRecord['peminjaman_id']);
+    if ($returnRecord === null || $loan === null) {
+        continue;
+    }
+    $fines[] = array_merge($fine, [
+        'tanggal_kembali' => $returnRecord['tanggal_kembali'],
+        'tanggal_pinjam' => $loan['tanggal_pinjam'],
+        'tanggal_jatuh_tempo' => $loan['tanggal_jatuh_tempo'],
+        'nama_lengkap' => $loan['nama_lengkap'],
+        'email' => $loan['email'],
+        'nomor_anggota' => $loan['nomor_anggota'],
+        'judul' => $loan['buku']['judul'],
+        'isbn' => $loan['buku']['isbn'],
+    ]);
+}
+usort($fines, static function (array $left, array $right): int {
+    $dateOrder = strcmp($right['tanggal_kembali'], $left['tanggal_kembali']);
+    return $dateOrder !== 0 ? $dateOrder : ((int) $right['denda_id'] <=> (int) $left['denda_id']);
+});
 
 $unpaidTotal = 0.0;
 $paidTotal = 0.0;

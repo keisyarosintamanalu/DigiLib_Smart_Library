@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
-$pdo = digilibDatabaseConnection();
 $portalTitle = 'Data Anggota';
 $portalDescription = 'Kelola profil dan status anggota perpustakaan.';
 $activePage = 'members';
@@ -48,17 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($errorMessage === '' && $isEditing) {
-                $statement = $pdo->prepare(
-                    "SELECT a.`anggota_id`, a.`user_id`, a.`nomor_anggota`, a.`nomor_telepon`,
-                            a.`alamat`, a.`tanggal_daftar`, a.`status`,
-                            u.`nama_lengkap`, u.`email`
-                     FROM `anggota` a
-                     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-                     WHERE a.`anggota_id` = :id AND u.`role` = 'anggota'
-                     LIMIT 1"
-                );
-                $statement->execute(['id' => $memberId]);
-                $editingMember = $statement->fetch() ?: null;
+                $database = digilibDatabaseRead();
+                $editingMember = digilibDatabaseMemberRecord($database, (int) $memberId);
+                if ($editingMember !== null && $editingMember['role'] !== 'anggota') {
+                    $editingMember = null;
+                }
                 if ($editingMember === null) {
                     http_response_code(404);
                     $errorMessage = 'Data anggota yang akan diedit tidak ditemukan.';
@@ -85,103 +78,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($errorMessage === '') {
-                $emailCheck = $pdo->prepare(
-                    'SELECT `user_id` FROM `users` WHERE `email` = :email LIMIT 1'
-                );
-                $emailCheck->execute(['email' => $email]);
-                $existingEmailUserId = $emailCheck->fetchColumn();
-                if ($existingEmailUserId !== false
-                    && (!$isEditing || (int) $existingEmailUserId !== (int) $editingMember['user_id'])) {
-                    $errorMessage = 'Email tersebut sudah digunakan oleh akun lain.';
+                $database = digilibDatabaseRead();
+                foreach ($database['users'] as $user) {
+                    if (strcasecmp((string) $user['email'], (string) $email) === 0
+                        && (!$isEditing || (int) $user['user_id'] !== (int) $editingMember['user_id'])) {
+                        $errorMessage = 'Email tersebut sudah digunakan oleh akun lain.';
+                        break;
+                    }
                 }
             }
 
             if ($errorMessage === '') {
                 try {
-                    $pdo->beginTransaction();
-                    if ($isEditing) {
-                        $updateUser = $pdo->prepare(
-                            'UPDATE `users`
-                             SET `nama_lengkap` = :nama, `email` = :email, `status` = :status
-                             WHERE `user_id` = :user_id AND `role` = :role'
-                        );
-                        $updateUser->execute([
-                            'nama' => $formValues['nama_lengkap'],
-                            'email' => $email,
-                            'status' => $formValues['status'],
-                            'user_id' => $editingMember['user_id'],
-                            'role' => 'anggota',
-                        ]);
-
-                        if ($password !== '') {
-                            $updatePassword = $pdo->prepare(
-                                'UPDATE `users` SET `password_hash` = :password_hash
-                                 WHERE `user_id` = :user_id AND `role` = :role'
-                            );
-                            $updatePassword->execute([
-                                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-                                'user_id' => $editingMember['user_id'],
-                                'role' => 'anggota',
-                            ]);
+                    $success = digilibDatabaseTransaction(static function (array &$database) use (
+                        $isEditing,
+                        $memberId,
+                        $editingMember,
+                        $formValues,
+                        $email,
+                        $password
+                    ): string {
+                        foreach ($database['users'] as $user) {
+                            if (strcasecmp((string) $user['email'], (string) $email) === 0
+                                && (!$isEditing || (int) $user['user_id'] !== (int) $editingMember['user_id'])) {
+                                throw new DomainException('duplicate_email');
+                            }
                         }
 
-                        $updateMember = $pdo->prepare(
-                            'UPDATE `anggota`
-                             SET `nomor_telepon` = :telepon, `alamat` = :alamat,
-                                 `tanggal_daftar` = :tanggal_daftar, `status` = :status
-                             WHERE `anggota_id` = :anggota_id'
-                        );
-                        $updateMember->execute([
-                            'telepon' => $formValues['nomor_telepon'] !== '' ? $formValues['nomor_telepon'] : null,
-                            'alamat' => $formValues['alamat'] !== '' ? $formValues['alamat'] : null,
-                            'tanggal_daftar' => $formValues['tanggal_daftar'],
-                            'status' => $formValues['status'],
-                            'anggota_id' => $memberId,
-                        ]);
-                        $success = 'Data anggota berhasil diperbarui.';
-                    } else {
-                        $insertUser = $pdo->prepare(
-                            'INSERT INTO `users` (`nama_lengkap`, `email`, `password_hash`, `role`, `status`)
-                             VALUES (:nama, :email, :password_hash, :role, :status)'
-                        );
-                        $insertUser->execute([
-                            'nama' => $formValues['nama_lengkap'],
-                            'email' => $email,
+                        $timestamp = digilibDatabaseTimestamp();
+                        if ($isEditing) {
+                            foreach ($database['users'] as &$user) {
+                                if ((int) $user['user_id'] === (int) $editingMember['user_id']) {
+                                    $user['nama_lengkap'] = $formValues['nama_lengkap'];
+                                    $user['email'] = (string) $email;
+                                    $user['status'] = $formValues['status'];
+                                    $user['updated_at'] = $timestamp;
+                                    if ($password !== '') {
+                                        $user['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+                                    }
+                                    break;
+                                }
+                            }
+                            unset($user);
+                            foreach ($database['anggota'] as &$member) {
+                                if ((int) $member['anggota_id'] === (int) $memberId) {
+                                    $member['nomor_telepon'] = $formValues['nomor_telepon'] !== '' ? $formValues['nomor_telepon'] : null;
+                                    $member['alamat'] = $formValues['alamat'] !== '' ? $formValues['alamat'] : null;
+                                    $member['tanggal_daftar'] = $formValues['tanggal_daftar'];
+                                    $member['status'] = $formValues['status'];
+                                    break;
+                                }
+                            }
+                            unset($member);
+                            return 'Data anggota berhasil diperbarui.';
+                        }
+
+                        $newUserId = digilibDatabaseNextId($database, 'users', 'user_id');
+                        $newMemberId = digilibDatabaseNextId($database, 'anggota', 'anggota_id');
+                        $database['users'][] = [
+                            'user_id' => $newUserId,
+                            'nama_lengkap' => $formValues['nama_lengkap'],
+                            'email' => (string) $email,
                             'password_hash' => password_hash($password, PASSWORD_DEFAULT),
                             'role' => 'anggota',
                             'status' => $formValues['status'],
-                        ]);
-                        $newUserId = (int) $pdo->lastInsertId();
-                        $memberNumber = 'AGT-' . strtoupper(bin2hex(random_bytes(5)));
-
-                        $insertMember = $pdo->prepare(
-                            'INSERT INTO `anggota`
-                                (`user_id`, `nomor_anggota`, `nomor_telepon`, `alamat`, `tanggal_daftar`, `status`)
-                             VALUES
-                                (:user_id, :nomor_anggota, :telepon, :alamat, :tanggal_daftar, :status)'
-                        );
-                        $insertMember->execute([
+                            'created_at' => $timestamp,
+                            'updated_at' => $timestamp,
+                        ];
+                        $database['anggota'][] = [
+                            'anggota_id' => $newMemberId,
                             'user_id' => $newUserId,
-                            'nomor_anggota' => $memberNumber,
-                            'telepon' => $formValues['nomor_telepon'] !== '' ? $formValues['nomor_telepon'] : null,
+                            'nomor_anggota' => 'AGT-' . strtoupper(bin2hex(random_bytes(5))),
+                            'nomor_telepon' => $formValues['nomor_telepon'] !== '' ? $formValues['nomor_telepon'] : null,
                             'alamat' => $formValues['alamat'] !== '' ? $formValues['alamat'] : null,
                             'tanggal_daftar' => $formValues['tanggal_daftar'],
                             'status' => $formValues['status'],
-                        ]);
-                        $success = 'Anggota dan akun login berhasil ditambahkan.';
-                    }
-
-                    $pdo->commit();
+                        ];
+                        return 'Anggota dan akun login berhasil ditambahkan.';
+                    });
                     $_SESSION['members_success'] = $success;
                     digilibMemberRedirect();
-                } catch (PDOException $exception) {
-                    if ($pdo->inTransaction()) {
-                        $pdo->rollBack();
-                    }
-                    error_log('DIGILIB member save database error: ' . $exception->getMessage());
-                    $errorMessage = $exception->getCode() === '23000'
+                } catch (DomainException $exception) {
+                    $errorMessage = $exception->getMessage() === 'duplicate_email'
                         ? 'Email atau nomor anggota sudah digunakan.'
-                        : 'Data anggota gagal disimpan karena terjadi kesalahan database.';
+                        : 'Data anggota gagal disimpan.';
+                } catch (RuntimeException $exception) {
+                    error_log('DIGILIB member save JSON database error: ' . $exception->getMessage());
+                    $errorMessage = 'Data anggota gagal disimpan karena terjadi kesalahan penyimpanan.';
                 }
             }
         } elseif ($action === 'delete') {
@@ -190,38 +173,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errorMessage = 'ID anggota yang akan dihapus tidak valid.';
             } else {
                 try {
-                    $pdo->beginTransaction();
-                    $statement = $pdo->prepare(
-                        "SELECT a.`user_id`
-                         FROM `anggota` a
-                         INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-                         WHERE a.`anggota_id` = :id AND u.`role` = 'anggota'
-                         FOR UPDATE"
-                    );
-                    $statement->execute(['id' => $memberId]);
-                    $memberToDelete = $statement->fetch();
+                    $memberToDelete = digilibDatabaseTransaction(static function (array &$database) use ($memberId): ?array {
+                        $member = digilibDatabaseMemberRecord($database, (int) $memberId);
+                        if ($member === null || $member['role'] !== 'anggota') {
+                            return null;
+                        }
+                        foreach ($database['peminjaman'] as $loan) {
+                            if ((int) $loan['anggota_id'] === (int) $memberId) {
+                                throw new DomainException('member_has_loans');
+                            }
+                        }
+                        $database['anggota'] = array_values(array_filter(
+                            $database['anggota'],
+                            static function (array $record) use ($memberId): bool {
+                                return (int) $record['anggota_id'] !== (int) $memberId;
+                            }
+                        ));
+                        $database['users'] = array_values(array_filter(
+                            $database['users'],
+                            static function (array $record) use ($member): bool {
+                                return (int) $record['user_id'] !== (int) $member['user_id'];
+                            }
+                        ));
+                        return $member;
+                    });
                     if (!$memberToDelete) {
-                        $pdo->rollBack();
                         $errorMessage = 'Data anggota tidak ditemukan.';
                     } else {
-                        $deleteMember = $pdo->prepare('DELETE FROM `anggota` WHERE `anggota_id` = :id');
-                        $deleteMember->execute(['id' => $memberId]);
-                        $deleteUser = $pdo->prepare(
-                            "DELETE FROM `users` WHERE `user_id` = :user_id AND `role` = 'anggota'"
-                        );
-                        $deleteUser->execute(['user_id' => $memberToDelete['user_id']]);
-                        $pdo->commit();
                         $_SESSION['members_success'] = 'Data anggota dan akun login berhasil dihapus.';
                         digilibMemberRedirect();
                     }
-                } catch (PDOException $exception) {
-                    if ($pdo->inTransaction()) {
-                        $pdo->rollBack();
-                    }
-                    error_log('DIGILIB member delete database error: ' . $exception->getMessage());
-                    $errorMessage = $exception->getCode() === '23000'
+                } catch (DomainException $exception) {
+                    $errorMessage = $exception->getMessage() === 'member_has_loans'
                         ? 'Anggota tidak dapat dihapus karena masih memiliki riwayat peminjaman.'
-                        : 'Data anggota gagal dihapus karena terjadi kesalahan database.';
+                        : 'Data anggota gagal dihapus.';
+                } catch (RuntimeException $exception) {
+                    error_log('DIGILIB member delete JSON database error: ' . $exception->getMessage());
+                    $errorMessage = 'Data anggota gagal dihapus karena terjadi kesalahan penyimpanan.';
                 }
             }
         } else {
@@ -233,17 +221,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $requestedEditId = filter_var($_GET['edit'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $requestedEditId !== false && $requestedEditId !== null) {
-    $statement = $pdo->prepare(
-        "SELECT a.`anggota_id`, a.`user_id`, a.`nomor_anggota`, a.`nomor_telepon`,
-                a.`alamat`, a.`tanggal_daftar`, a.`status`,
-                u.`nama_lengkap`, u.`email`
-         FROM `anggota` a
-         INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-         WHERE a.`anggota_id` = :id AND u.`role` = 'anggota'
-         LIMIT 1"
-    );
-    $statement->execute(['id' => $requestedEditId]);
-    $editingMember = $statement->fetch() ?: null;
+    $database = digilibDatabaseRead();
+    $editingMember = digilibDatabaseMemberRecord($database, (int) $requestedEditId);
+    if ($editingMember !== null && $editingMember['role'] !== 'anggota') {
+        $editingMember = null;
+    }
     if ($editingMember === null) {
         http_response_code(404);
         $errorMessage = 'Data anggota yang akan diedit tidak ditemukan.';
@@ -255,33 +237,37 @@ $statusFilter = (string) ($_GET['status'] ?? '');
 if (!in_array($statusFilter, ['', 'aktif', 'nonaktif'], true)) {
     $statusFilter = '';
 }
-$conditions = ["u.`role` = 'anggota'"];
-$parameters = [];
-if ($search !== '') {
-    $conditions[] = '(u.`nama_lengkap` LIKE :nama OR u.`email` LIKE :email OR a.`nomor_anggota` LIKE :nomor OR a.`nomor_telepon` LIKE :telepon OR a.`alamat` LIKE :alamat)';
-    $term = '%' . $search . '%';
-    $parameters['nama'] = $term;
-    $parameters['email'] = $term;
-    $parameters['nomor'] = $term;
-    $parameters['telepon'] = $term;
-    $parameters['alamat'] = $term;
+$database = digilibDatabaseRead();
+$members = [];
+foreach ($database['anggota'] as $memberRecord) {
+    $member = digilibDatabaseMemberRecord($database, (int) $memberRecord['anggota_id']);
+    if ($member === null || $member['role'] !== 'anggota') {
+        continue;
+    }
+    if ($statusFilter !== '' && $member['status'] !== $statusFilter) {
+        continue;
+    }
+    if ($search !== '' && stripos(implode(' ', [
+        $member['nama_lengkap'],
+        $member['email'],
+        $member['nomor_anggota'],
+        $member['nomor_telepon'] ?? '',
+        $member['alamat'] ?? '',
+    ]), $search) === false) {
+        continue;
+    }
+    $member['pinjaman_aktif'] = 0;
+    foreach ($database['peminjaman'] as $loan) {
+        if ((int) $loan['anggota_id'] === (int) $member['anggota_id'] && $loan['status'] === 'dipinjam') {
+            $member['pinjaman_aktif']++;
+        }
+    }
+    $members[] = $member;
 }
-if ($statusFilter !== '') {
-    $conditions[] = 'a.`status` = :status';
-    $parameters['status'] = $statusFilter;
-}
-$statement = $pdo->prepare(
-    'SELECT a.`anggota_id`, a.`nomor_anggota`, a.`nomor_telepon`, a.`alamat`,
-            a.`tanggal_daftar`, a.`status`, u.`nama_lengkap`, u.`email`,
-            (SELECT COUNT(*) FROM `peminjaman` p
-             WHERE p.`anggota_id` = a.`anggota_id` AND p.`status` = \'dipinjam\') AS `pinjaman_aktif`
-     FROM `anggota` a
-     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-     WHERE ' . implode(' AND ', $conditions) . '
-     ORDER BY a.`tanggal_daftar` DESC, u.`nama_lengkap` ASC'
-);
-$statement->execute($parameters);
-$members = $statement->fetchAll();
+usort($members, static function (array $left, array $right): int {
+    $dateOrder = strcmp($right['tanggal_daftar'], $left['tanggal_daftar']);
+    return $dateOrder !== 0 ? $dateOrder : strcasecmp($left['nama_lengkap'], $right['nama_lengkap']);
+});
 
 if ($editingMember !== null) {
     $formValues = array_merge($editingMember, $formValues);

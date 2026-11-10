@@ -3,39 +3,41 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Data Peminjaman';
 $portalDescription = 'Pantau transaksi peminjaman seluruh anggota.';
 $activePage = 'loans';
 
 $search = trim((string) ($_GET['q'] ?? ''));
-$conditions = [];
-$parameters = [];
-if ($search !== '') {
-    $conditions[] = '(p.`status` LIKE :status OR b.`judul` LIKE :judul OR u.`nama_lengkap` LIKE :nama OR u.`email` LIKE :email OR a.`nomor_anggota` LIKE :nomor)';
-    $term = '%' . $search . '%';
-    $parameters = [
-        'status' => $term,
-        'judul' => $term,
-        'nama' => $term,
-        'email' => $term,
-        'nomor' => $term,
-    ];
+$loans = [];
+foreach ($database['peminjaman'] as $loan) {
+    $joined = digilibDatabaseLoanRecord($database, (int) $loan['peminjaman_id']);
+    if ($joined === null) {
+        continue;
+    }
+    $record = array_merge($loan, [
+        'nomor_anggota' => $joined['nomor_anggota'],
+        'nama_lengkap' => $joined['nama_lengkap'],
+        'email' => $joined['email'],
+        'isbn' => $joined['buku']['isbn'],
+        'judul' => $joined['buku']['judul'],
+        'penulis' => $joined['buku']['penulis'],
+    ]);
+    if ($search !== '' && stripos(implode(' ', [
+        $record['status'],
+        $record['judul'],
+        $record['nama_lengkap'],
+        $record['email'],
+        $record['nomor_anggota'],
+    ]), $search) === false) {
+        continue;
+    }
+    $loans[] = $record;
 }
-$whereSql = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
-$loansStatement = $pdo->prepare(
-    'SELECT p.`peminjaman_id`, p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`, p.`status`,
-            a.`nomor_anggota`, u.`nama_lengkap`, u.`email`,
-            b.`isbn`, b.`judul`, b.`penulis`
-     FROM `peminjaman` p
-     INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
-     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-     INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
-     ' . $whereSql . '
-     ORDER BY p.`tanggal_pinjam` DESC, p.`peminjaman_id` DESC'
-);
-$loansStatement->execute($parameters);
-$loans = $loansStatement->fetchAll();
+usort($loans, static function (array $left, array $right): int {
+    $dateOrder = strcmp($right['tanggal_pinjam'], $left['tanggal_pinjam']);
+    return $dateOrder !== 0 ? $dateOrder : ((int) $right['peminjaman_id'] <=> (int) $left['peminjaman_id']);
+});
 
 $activeCount = 0;
 foreach ($loans as $loan) {

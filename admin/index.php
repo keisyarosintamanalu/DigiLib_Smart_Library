@@ -3,73 +3,89 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Dashboard Admin';
 $portalDescription = 'Ringkasan kondisi perpustakaan berdasarkan data terbaru.';
 $activePage = 'dashboard';
 
 $lowStockLimit = 3;
-$statsStatement = $pdo->prepare(
-    'SELECT
-        (SELECT COUNT(*) FROM `buku` WHERE `status` = \'aktif\') AS `total_judul`,
-        (SELECT COALESCE(SUM(`stok`), 0) FROM `buku` WHERE `status` = \'aktif\') AS `total_eksemplar`,
-        (SELECT COUNT(*) FROM `anggota`) AS `total_anggota`,
-        (SELECT COUNT(*) FROM `anggota` WHERE `status` = \'aktif\') AS `anggota_aktif`,
-        (SELECT COUNT(*) FROM `peminjaman` WHERE `status` = \'dipinjam\') AS `buku_dipinjam`,
-        (SELECT COUNT(*) FROM `peminjaman`
-         WHERE `status` = \'dipinjam\' AND `tanggal_jatuh_tempo` < CURRENT_DATE) AS `terlambat`,
-        (SELECT COALESCE(SUM(`jumlah_denda`), 0) FROM `denda`
-         WHERE `status_pembayaran` = \'belum_dibayar\') AS `denda_belum_dibayar`,
-        (SELECT COUNT(*) FROM `denda` WHERE `status_pembayaran` = \'belum_dibayar\') AS `transaksi_denda`,
-        (SELECT COUNT(*) FROM `buku` WHERE `status` = \'aktif\' AND `stok` <= :batas_stok) AS `stok_rendah`'
-);
-$statsStatement->execute(['batas_stok' => $lowStockLimit]);
-$stats = $statsStatement->fetch();
-if ($stats === false) {
-    throw new RuntimeException('Dashboard statistics could not be loaded.');
+$activeBooks = array_values(array_filter($database['buku'], static function (array $book): bool {
+    return $book['status'] === 'aktif';
+}));
+$today = digilibDatabaseToday();
+$lateLoanCount = 0;
+foreach ($database['peminjaman'] as $loan) {
+    if ($loan['status'] === 'dipinjam' && $loan['tanggal_jatuh_tempo'] < $today) {
+        $lateLoanCount++;
+    }
+}
+$unpaidFines = array_values(array_filter($database['denda'], static function (array $fine): bool {
+    return $fine['status_pembayaran'] === 'belum_dibayar';
+}));
+$stats = [
+    'total_judul' => count($activeBooks),
+    'total_eksemplar' => array_sum(array_map('intval', array_column($activeBooks, 'stok'))),
+    'total_anggota' => count($database['anggota']),
+    'anggota_aktif' => count(array_filter($database['anggota'], static function (array $member): bool {
+        return $member['status'] === 'aktif';
+    })),
+    'buku_dipinjam' => count(array_filter($database['peminjaman'], static function (array $loan): bool {
+        return $loan['status'] === 'dipinjam';
+    })),
+    'terlambat' => $lateLoanCount,
+    'denda_belum_dibayar' => array_sum(array_map('floatval', array_column($unpaidFines, 'jumlah_denda'))),
+    'transaksi_denda' => count($unpaidFines),
+    'stok_rendah' => count(array_filter($activeBooks, static function (array $book) use ($lowStockLimit): bool {
+        return (int) $book['stok'] <= $lowStockLimit;
+    })),
+];
+
+$lowStockBooks = array_values(array_filter($activeBooks, static function (array $book) use ($lowStockLimit): bool {
+    return (int) $book['stok'] <= $lowStockLimit;
+}));
+usort($lowStockBooks, static function (array $left, array $right): int {
+    $stockOrder = (int) $left['stok'] <=> (int) $right['stok'];
+    return $stockOrder !== 0 ? $stockOrder : strcasecmp($left['judul'], $right['judul']);
+});
+$lowStockBooks = array_slice($lowStockBooks, 0, 8);
+
+$categoryStats = [];
+foreach ($database['kategori'] as $category) {
+    $count = count(array_filter($database['buku'], static function (array $book) use ($category): bool {
+        return (int) $book['kategori_id'] === (int) $category['kategori_id'];
+    }));
+    if ($count > 0) {
+        $categoryStats[] = ['nama_kategori' => $category['nama_kategori'], 'jumlah_buku' => $count];
+    }
+}
+usort($categoryStats, static function (array $left, array $right): int {
+    return strcasecmp($left['nama_kategori'], $right['nama_kategori']);
+});
+
+$loanStats = ['terlambat' => 0, 'dipinjam' => 0, 'dikembalikan' => 0, 'dibatalkan' => 0];
+foreach ($database['peminjaman'] as $loan) {
+    if ($loan['status'] === 'dipinjam' && $loan['tanggal_jatuh_tempo'] < $today) {
+        $loanStats['terlambat']++;
+    } elseif (isset($loanStats[$loan['status']])) {
+        $loanStats[$loan['status']]++;
+    }
 }
 
-$lowStockStatement = $pdo->prepare(
-    'SELECT `judul`, `isbn`, `stok`, `rak`
-     FROM `buku`
-     WHERE `status` = \'aktif\' AND `stok` <= :batas_stok
-     ORDER BY `stok` ASC, `judul` ASC
-     LIMIT 8'
-);
-$lowStockStatement->execute(['batas_stok' => $lowStockLimit]);
-$lowStockBooks = $lowStockStatement->fetchAll();
-
-$categoryStats = $pdo->query(
-    'SELECT k.`nama_kategori`, COUNT(b.`buku_id`) AS `jumlah_buku`
-     FROM `kategori` k
-     LEFT JOIN `buku` b ON b.`kategori_id` = k.`kategori_id`
-     GROUP BY k.`kategori_id`, k.`nama_kategori`
-     HAVING COUNT(b.`buku_id`) > 0
-     ORDER BY k.`nama_kategori`'
-)->fetchAll();
-
-$loanStats = $pdo->query(
-    'SELECT
-        COALESCE(SUM(CASE WHEN `status` = \'dipinjam\' AND `tanggal_jatuh_tempo` < CURRENT_DATE THEN 1 ELSE 0 END), 0) AS `terlambat`,
-        COALESCE(SUM(CASE WHEN `status` = \'dipinjam\' AND `tanggal_jatuh_tempo` >= CURRENT_DATE THEN 1 ELSE 0 END), 0) AS `dipinjam`,
-        COALESCE(SUM(CASE WHEN `status` = \'dikembalikan\' THEN 1 ELSE 0 END), 0) AS `dikembalikan`,
-        COALESCE(SUM(CASE WHEN `status` = \'dibatalkan\' THEN 1 ELSE 0 END), 0) AS `dibatalkan`
-     FROM `peminjaman`'
-)->fetch();
-if ($loanStats === false) {
-    throw new RuntimeException('Loan statistics could not be loaded.');
+$recentLoans = [];
+foreach ($database['peminjaman'] as $loan) {
+    $joined = digilibDatabaseLoanRecord($database, (int) $loan['peminjaman_id']);
+    if ($joined !== null) {
+        $recentLoans[] = array_merge($loan, [
+            'nama_lengkap' => $joined['nama_lengkap'],
+            'judul' => $joined['buku']['judul'],
+        ]);
+    }
 }
-
-$recentLoans = $pdo->query(
-    'SELECT p.`peminjaman_id`, p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`, p.`status`,
-            u.`nama_lengkap`, b.`judul`
-     FROM `peminjaman` p
-     INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
-     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-     INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
-     ORDER BY p.`tanggal_pinjam` DESC, p.`peminjaman_id` DESC
-     LIMIT 5'
-)->fetchAll();
+usort($recentLoans, static function (array $left, array $right): int {
+    $dateOrder = strcmp($right['tanggal_pinjam'], $left['tanggal_pinjam']);
+    return $dateOrder !== 0 ? $dateOrder : ((int) $right['peminjaman_id'] <=> (int) $left['peminjaman_id']);
+});
+$recentLoans = array_slice($recentLoans, 0, 5);
 
 $categoryChartData = [
     'labels' => array_column($categoryStats, 'nama_kategori'),

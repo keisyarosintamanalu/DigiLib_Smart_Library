@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Pengembalian Buku';
 $portalDescription = 'Proses buku kembali dan hitung keterlambatan berdasarkan tanggal database.';
 $activePage = 'returns';
@@ -27,104 +27,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errorMessage = 'Transaksi peminjaman yang dipilih tidak valid.';
         } else {
             try {
-                $pdo->beginTransaction();
-                $loanStatement = $pdo->prepare(
-                    "SELECT `peminjaman_id`, `buku_id`, `status`
-                     FROM `peminjaman`
-                     WHERE `peminjaman_id` = :peminjaman_id
-                     FOR UPDATE"
-                );
-                $loanStatement->execute(['peminjaman_id' => $loanId]);
-                $loan = $loanStatement->fetch();
-
-                if (!$loan || $loan['status'] !== 'dipinjam') {
-                    $pdo->rollBack();
-                    $errorMessage = 'Transaksi tidak ditemukan atau buku sudah dikembalikan.';
-                } else {
-                    $bookStatement = $pdo->prepare(
-                        'SELECT `buku_id` FROM `buku` WHERE `buku_id` = :buku_id FOR UPDATE'
-                    );
-                    $bookStatement->execute(['buku_id' => $loan['buku_id']]);
-                    if (!$bookStatement->fetch()) {
-                        $pdo->rollBack();
-                        $errorMessage = 'Data buku untuk transaksi ini tidak ditemukan; stok tidak dapat diperbarui.';
-                    } else {
-                        $returnStatement = $pdo->prepare(
-                            'INSERT INTO `pengembalian` (`peminjaman_id`, `tanggal_kembali`)
-                             VALUES (:peminjaman_id, CURRENT_DATE)'
-                        );
-                        $returnStatement->execute(['peminjaman_id' => $loanId]);
-                        $returnId = (int) $pdo->lastInsertId();
-
-                        $updateLoan = $pdo->prepare(
-                            "UPDATE `peminjaman`
-                             SET `status` = 'dikembalikan'
-                             WHERE `peminjaman_id` = :peminjaman_id AND `status` = 'dipinjam'"
-                        );
-                        $updateLoan->execute(['peminjaman_id' => $loanId]);
-                        if ($updateLoan->rowCount() !== 1) {
-                            throw new RuntimeException('Loan status changed while processing the return.');
+                digilibDatabaseTransaction(static function (array &$database) use ($loanId): void {
+                    $loanIndex = null;
+                    foreach ($database['peminjaman'] as $index => $record) {
+                        if ((int) $record['peminjaman_id'] === (int) $loanId && $record['status'] === 'dipinjam') {
+                            $loanIndex = $index;
+                            break;
                         }
-
-                        $updateStock = $pdo->prepare(
-                            'UPDATE `buku` SET `stok` = `stok` + 1 WHERE `buku_id` = :buku_id'
-                        );
-                        $updateStock->execute(['buku_id' => $loan['buku_id']]);
-
-                        $insertFine = $pdo->prepare(
-                            "INSERT INTO `denda`
-                                (`pengembalian_id`, `jumlah_hari_terlambat`, `tarif_per_hari`,
-                                 `jumlah_denda`, `status_pembayaran`, `tanggal_pembayaran`)
-                             SELECT
-                                :pengembalian_id,
-                                GREATEST(DATEDIFF(r.`tanggal_kembali`, p.`tanggal_jatuh_tempo`), 0),
-                                2000.00,
-                                GREATEST(DATEDIFF(r.`tanggal_kembali`, p.`tanggal_jatuh_tempo`), 0) * 2000.00,
-                                CASE
-                                    WHEN DATEDIFF(r.`tanggal_kembali`, p.`tanggal_jatuh_tempo`) > 0 THEN 'belum_dibayar'
-                                    ELSE 'lunas'
-                                END,
-                                NULL
-                             FROM `pengembalian` r
-                             INNER JOIN `peminjaman` p ON p.`peminjaman_id` = r.`peminjaman_id`
-                             WHERE r.`pengembalian_id` = :return_id"
-                        );
-                        $insertFine->execute([
-                            'pengembalian_id' => $returnId,
-                            'return_id' => $returnId,
-                        ]);
-                        if ($insertFine->rowCount() !== 1) {
-                            throw new RuntimeException('Fine could not be calculated from the database dates.');
-                        }
-
-                        $pdo->commit();
-                        $_SESSION['returns_success'] = 'Pengembalian berhasil diproses. Tanggal dan denda dihitung dari data database.';
-                        digilibReturnRedirect();
                     }
-                }
-            } catch (Throwable $exception) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                error_log('DIGILIB book return error: ' . $exception->getMessage());
+                    if ($loanIndex === null) {
+                        throw new DomainException('loan_missing');
+                    }
+
+                    $bookIndex = null;
+                    foreach ($database['buku'] as $index => $book) {
+                        if ((int) $book['buku_id'] === (int) $database['peminjaman'][$loanIndex]['buku_id']) {
+                            $bookIndex = $index;
+                            break;
+                        }
+                    }
+                    if ($bookIndex === null) {
+                        throw new DomainException('book_missing');
+                    }
+
+                    $today = digilibDatabaseToday();
+                    $dueDate = new DateTimeImmutable($database['peminjaman'][$loanIndex]['tanggal_jatuh_tempo']);
+                    $returnDate = new DateTimeImmutable($today);
+                    $lateDays = max(0, (int) $dueDate->diff($returnDate)->format('%r%a'));
+                    $returnId = digilibDatabaseNextId($database, 'pengembalian', 'pengembalian_id');
+                    $database['pengembalian'][] = [
+                        'pengembalian_id' => $returnId,
+                        'peminjaman_id' => (int) $loanId,
+                        'tanggal_kembali' => $today,
+                        'catatan' => null,
+                        'created_at' => digilibDatabaseTimestamp(),
+                    ];
+                    $database['peminjaman'][$loanIndex]['status'] = 'dikembalikan';
+                    $database['peminjaman'][$loanIndex]['updated_at'] = digilibDatabaseTimestamp();
+                    $database['buku'][$bookIndex]['stok'] = (int) $database['buku'][$bookIndex]['stok'] + 1;
+                    $database['denda'][] = [
+                        'denda_id' => digilibDatabaseNextId($database, 'denda', 'denda_id'),
+                        'pengembalian_id' => $returnId,
+                        'jumlah_hari_terlambat' => $lateDays,
+                        'tarif_per_hari' => 2000,
+                        'jumlah_denda' => $lateDays * 2000,
+                        'status_pembayaran' => $lateDays > 0 ? 'belum_dibayar' : 'lunas',
+                        'tanggal_pembayaran' => null,
+                        'created_at' => digilibDatabaseTimestamp(),
+                    ];
+                });
+                $_SESSION['returns_success'] = 'Pengembalian berhasil diproses. Tanggal dan denda dihitung dari database JSON.';
+                digilibReturnRedirect();
+            } catch (DomainException $exception) {
+                $errorMessage = $exception->getMessage() === 'book_missing'
+                    ? 'Data buku untuk transaksi ini tidak ditemukan; stok tidak dapat diperbarui.'
+                    : 'Transaksi tidak ditemukan atau buku sudah dikembalikan.';
+            } catch (RuntimeException $exception) {
+                error_log('DIGILIB book return JSON database error: ' . $exception->getMessage());
                 $errorMessage = 'Pengembalian gagal diproses. Tidak ada perubahan stok atau transaksi yang disimpan.';
             }
         }
     }
 }
 
-$activeLoans = $pdo->query(
-    "SELECT p.`peminjaman_id`, p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`,
-            DATEDIFF(CURRENT_DATE, p.`tanggal_jatuh_tempo`) AS `selisih_hari`,
-            a.`nomor_anggota`, u.`nama_lengkap`, u.`email`,
-            b.`judul`, b.`isbn`
-     FROM `peminjaman` p
-     INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
-     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-     INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
-     WHERE p.`status` = 'dipinjam'
-     ORDER BY p.`tanggal_jatuh_tempo` ASC, p.`peminjaman_id` ASC"
-)->fetchAll();
+$database = digilibDatabaseRead();
+$activeLoans = [];
+foreach ($database['peminjaman'] as $loan) {
+    if ($loan['status'] !== 'dipinjam') {
+        continue;
+    }
+    $joined = digilibDatabaseLoanRecord($database, (int) $loan['peminjaman_id']);
+    if ($joined === null) {
+        continue;
+    }
+    $loan['nomor_anggota'] = $joined['nomor_anggota'];
+    $loan['nama_lengkap'] = $joined['nama_lengkap'];
+    $loan['email'] = $joined['email'];
+    $loan['judul'] = $joined['buku']['judul'];
+    $loan['isbn'] = $joined['buku']['isbn'];
+    $loan['selisih_hari'] = max(0, (int) (new DateTimeImmutable($loan['tanggal_jatuh_tempo']))
+        ->diff(new DateTimeImmutable(digilibDatabaseToday()))->format('%r%a'));
+    $activeLoans[] = $loan;
+}
+usort($activeLoans, static function (array $left, array $right): int {
+    $dateOrder = strcmp($left['tanggal_jatuh_tempo'], $right['tanggal_jatuh_tempo']);
+    return $dateOrder !== 0 ? $dateOrder : ((int) $left['peminjaman_id'] <=> (int) $right['peminjaman_id']);
+});
 ?>
 <?php require __DIR__ . '/../includes/portal_header.php'; ?>
 
@@ -137,7 +125,7 @@ $activeLoans = $pdo->query(
 
 <section class="card-shadow overflow-hidden rounded-2xl border border-slate-100 bg-white">
   <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-    <div><h2 class="display-font text-sm font-extrabold">Buku yang masih dipinjam</h2><p class="mt-1 text-xs text-slate-400">Tanggal terlambat dihitung oleh MySQL dari jatuh tempo dan tanggal hari ini.</p></div>
+    <div><h2 class="display-font text-sm font-extrabold">Buku yang masih dipinjam</h2><p class="mt-1 text-xs text-slate-400">Tanggal terlambat dihitung dari tanggal jatuh tempo dan hari ini.</p></div>
     <span class="badge badge-amber"><?= count($activeLoans) ?> transaksi aktif</span>
   </div>
   <div class="table-wrap">

@@ -2,63 +2,79 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
-require_once __DIR__ . '/../config/supabase_storage.php';
+require_once __DIR__ . '/../config/book_covers.php';
 $portalUser = digilibRequireRole(['anggota']);
-$pdo = digilibDatabaseConnection();
-$memberStatement = $pdo->prepare(
-    "SELECT `anggota_id` FROM `anggota`
-     WHERE `user_id` = :user_id AND `status` = 'aktif'
-     LIMIT 1"
-);
-$memberStatement->execute(['user_id' => $portalUser['user_id']]);
-$memberId = $memberStatement->fetchColumn();
-if ($memberId === false) {
+$database = digilibDatabaseRead();
+$memberId = null;
+foreach ($database['anggota'] as $member) {
+    if ((int) $member['user_id'] === (int) $portalUser['user_id'] && $member['status'] === 'aktif') {
+        $memberId = (int) $member['anggota_id'];
+        break;
+    }
+}
+if ($memberId === null) {
     throw new RuntimeException('Active member profile could not be loaded.');
 }
 
-$statsStatement = $pdo->prepare(
-    "SELECT
-        (SELECT COUNT(*) FROM `buku` WHERE `status` = 'aktif') AS `total_judul`,
-        (SELECT COALESCE(SUM(`stok`), 0) FROM `buku` WHERE `status` = 'aktif') AS `buku_tersedia`,
-        (SELECT COUNT(*) FROM `peminjaman`
-         WHERE `anggota_id` = :active_member_id AND `status` = 'dipinjam') AS `pinjaman_aktif`,
-        (SELECT COALESCE(SUM(d.`jumlah_denda`), 0)
-         FROM `denda` d
-         INNER JOIN `pengembalian` r ON r.`pengembalian_id` = d.`pengembalian_id`
-         INNER JOIN `peminjaman` p ON p.`peminjaman_id` = r.`peminjaman_id`
-         WHERE p.`anggota_id` = :fine_member_id AND d.`status_pembayaran` = 'belum_dibayar') AS `denda_belum_dibayar`"
-);
-$statsStatement->execute([
-    'active_member_id' => $memberId,
-    'fine_member_id' => $memberId,
-]);
-$stats = $statsStatement->fetch();
-if ($stats === false) {
-    throw new RuntimeException('Member dashboard statistics could not be loaded.');
+$activeBooks = array_values(array_filter($database['buku'], static function (array $book): bool {
+    return $book['status'] === 'aktif';
+}));
+$memberLoans = array_values(array_filter($database['peminjaman'], static function (array $loan) use ($memberId): bool {
+    return (int) $loan['anggota_id'] === $memberId;
+}));
+$activeMemberLoans = array_values(array_filter($memberLoans, static function (array $loan): bool {
+    return $loan['status'] === 'dipinjam';
+}));
+$unpaidFineTotal = 0.0;
+foreach ($database['denda'] as $fine) {
+    if ($fine['status_pembayaran'] !== 'belum_dibayar') {
+        continue;
+    }
+    foreach ($database['pengembalian'] as $returnRecord) {
+        if ((int) $returnRecord['pengembalian_id'] !== (int) $fine['pengembalian_id']) {
+            continue;
+        }
+        foreach ($database['peminjaman'] as $loan) {
+            if ((int) $loan['peminjaman_id'] === (int) $returnRecord['peminjaman_id']
+                && (int) $loan['anggota_id'] === $memberId) {
+                $unpaidFineTotal += (float) $fine['jumlah_denda'];
+                break 2;
+            }
+        }
+    }
 }
+$stats = [
+    'total_judul' => count($activeBooks),
+    'buku_tersedia' => array_sum(array_map('intval', array_column($activeBooks, 'stok'))),
+    'pinjaman_aktif' => count($activeMemberLoans),
+    'denda_belum_dibayar' => $unpaidFineTotal,
+];
 
-$activeLoansStatement = $pdo->prepare(
-    "SELECT p.`peminjaman_id`, p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`,
-            DATEDIFF(CURRENT_DATE, p.`tanggal_jatuh_tempo`) AS `selisih_hari`,
-            b.`judul`, b.`penulis`
-     FROM `peminjaman` p
-     INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
-     WHERE p.`anggota_id` = :anggota_id AND p.`status` = 'dipinjam'
-     ORDER BY p.`tanggal_jatuh_tempo` ASC, p.`peminjaman_id` DESC
-     LIMIT 5"
-);
-$activeLoansStatement->execute(['anggota_id' => $memberId]);
-$activeLoans = $activeLoansStatement->fetchAll();
+$activeLoans = [];
+foreach ($activeMemberLoans as $loan) {
+    $book = digilibDatabaseBookRecord($database, (int) $loan['buku_id']);
+    if ($book === null) {
+        continue;
+    }
+    $loan['judul'] = $book['judul'];
+    $loan['penulis'] = $book['penulis'];
+    $loan['selisih_hari'] = max(0, (int) (new DateTimeImmutable($loan['tanggal_jatuh_tempo']))
+        ->diff(new DateTimeImmutable(digilibDatabaseToday()))->format('%r%a'));
+    $activeLoans[] = $loan;
+}
+usort($activeLoans, static function (array $left, array $right): int {
+    $dateOrder = strcmp($left['tanggal_jatuh_tempo'], $right['tanggal_jatuh_tempo']);
+    return $dateOrder !== 0 ? $dateOrder : ((int) $right['peminjaman_id'] <=> (int) $left['peminjaman_id']);
+});
+$activeLoans = array_slice($activeLoans, 0, 5);
 
-$recommendedBooks = $pdo->query(
-    "SELECT b.`buku_id`, b.`judul`, b.`penulis`, b.`tahun_terbit`, b.`stok`, b.`cover_path`,
-            k.`nama_kategori`
-     FROM `buku` b
-     INNER JOIN `kategori` k ON k.`kategori_id` = b.`kategori_id`
-     WHERE b.`status` = 'aktif' AND b.`stok` > 0
-     ORDER BY b.`judul` ASC
-     LIMIT 4"
-)->fetchAll();
+$recommendedBooks = array_values(array_filter($activeBooks, static function (array $book): bool {
+    return (int) $book['stok'] > 0;
+}));
+usort($recommendedBooks, static function (array $left, array $right): int {
+    return strcasecmp($left['judul'], $right['judul']);
+});
+$recommendedBooks = array_slice($recommendedBooks, 0, 4);
 
 $portalTitle = 'Dashboard Anggota';
 $portalDescription = 'Temukan bacaan berikutnya dan pantau peminjaman Anda.';

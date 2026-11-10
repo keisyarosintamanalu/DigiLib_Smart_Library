@@ -2,9 +2,9 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
-require_once __DIR__ . '/../config/supabase_storage.php';
+require_once __DIR__ . '/../config/book_covers.php';
 $portalUser = digilibRequireRole(['anggota']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Detail Buku';
 $portalDescription = 'Kenali informasi buku dan ketentuan peminjaman sebelum meminjam.';
 $activePage = 'books';
@@ -12,16 +12,10 @@ $activePage = 'books';
 $bookId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $book = false;
 if ($bookId !== false) {
-    $bookStatement = $pdo->prepare(
-        'SELECT b.`buku_id`, b.`isbn`, b.`judul`, b.`penulis`, b.`penerbit`,
-                b.`tahun_terbit`, b.`rak`, b.`stok`, b.`cover_path`, k.`nama_kategori`
-         FROM `buku` b
-         INNER JOIN `kategori` k ON k.`kategori_id` = b.`kategori_id`
-         WHERE b.`buku_id` = :buku_id AND b.`status` = \'aktif\'
-         LIMIT 1'
-    );
-    $bookStatement->execute(['buku_id' => $bookId]);
-    $book = $bookStatement->fetch();
+    $book = digilibDatabaseBookRecord($database, (int) $bookId);
+    if ($book !== null && $book['status'] !== 'aktif') {
+        $book = null;
+    }
 }
 
 if (!$book) {
@@ -30,24 +24,22 @@ if (!$book) {
 
 $activeCount = 3;
 if ($book) {
-    $memberStatement = $pdo->prepare(
-        "SELECT a.`anggota_id`, COUNT(p.`peminjaman_id`) AS `pinjaman_aktif`
-         FROM `anggota` a
-         LEFT JOIN `peminjaman` p
-           ON p.`anggota_id` = a.`anggota_id` AND p.`status` = 'dipinjam'
-         WHERE a.`user_id` = :user_id AND a.`status` = 'aktif'
-         GROUP BY a.`anggota_id`
-         LIMIT 1"
-    );
-    $memberStatement->execute(['user_id' => $portalUser['user_id']]);
-    $member = $memberStatement->fetch();
+    $member = null;
+    foreach ($database['anggota'] as $memberRecord) {
+        if ((int) $memberRecord['user_id'] === (int) $portalUser['user_id'] && $memberRecord['status'] === 'aktif') {
+            $member = $memberRecord;
+            break;
+        }
+    }
     if (!$member) {
         throw new RuntimeException('Active member profile could not be loaded.');
     }
-    $activeCount = (int) $member['pinjaman_aktif'];
+    $activeCount = count(array_filter($database['peminjaman'], static function (array $loan) use ($member): bool {
+        return (int) $loan['anggota_id'] === (int) $member['anggota_id'] && $loan['status'] === 'dipinjam';
+    }));
 }
 
-$coverUrl = $book ? digilibBookCoverUrl(is_string($book['cover_path']) ? $book['cover_path'] : null) : null;
+$coverUrl = $book ? digilibBookCoverUrl(is_string($book['cover_path'] ?? null) ? $book['cover_path'] : null) : null;
 ?>
 <?php require __DIR__ . '/../includes/portal_header.php'; ?>
 <div class="mb-5">

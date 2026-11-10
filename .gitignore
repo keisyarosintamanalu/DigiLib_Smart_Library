@@ -1,2 +1,3 @@
 /config/database.local.php
-/config/supabase.local.php
+/database/data.json
+/database/data.json.lock

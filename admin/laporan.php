@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
 $portalUser = digilibRequireRole(['admin', 'pustakawan']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Laporan Perpustakaan';
 $portalDescription = 'Pilih jenis laporan, atur rentang tanggal, lalu cetak hasilnya.';
 $activePage = 'reports';
@@ -12,83 +12,51 @@ $reportDefinitions = [
     'buku' => [
         'title' => 'Laporan Data Buku',
         'date_label' => 'Tanggal data buku (ditambahkan)',
-        'date_column' => 'DATE(b.`created_at`)',
-        'query' => 'SELECT b.`isbn`, b.`judul`, b.`penulis`, b.`penerbit`, b.`tahun_terbit`,
-                           k.`nama_kategori`, b.`rak`, b.`stok`, b.`status`
-                    FROM `buku` b
-                    INNER JOIN `kategori` k ON k.`kategori_id` = b.`kategori_id`',
+        'date_key' => 'created_at',
+        'source' => 'buku',
         'columns' => [
             'isbn' => 'ISBN', 'judul' => 'Judul', 'penulis' => 'Penulis', 'penerbit' => 'Penerbit',
             'tahun_terbit' => 'Tahun', 'nama_kategori' => 'Kategori', 'rak' => 'Rak', 'stok' => 'Stok', 'status' => 'Status',
         ],
-        'order' => 'b.`judul` ASC',
     ],
     'anggota' => [
         'title' => 'Laporan Data Anggota',
         'date_label' => 'Tanggal daftar',
-        'date_column' => 'a.`tanggal_daftar`',
-        'query' => 'SELECT u.`nama_lengkap`, u.`email`, a.`nomor_anggota`, a.`nomor_telepon`,
-                           a.`alamat`, a.`tanggal_daftar`, a.`status`
-                    FROM `anggota` a
-                    INNER JOIN `users` u ON u.`user_id` = a.`user_id`',
+        'date_key' => 'tanggal_daftar',
+        'source' => 'anggota',
         'columns' => [
             'nama_lengkap' => 'Nama', 'email' => 'Email', 'nomor_anggota' => 'Nomor anggota',
             'nomor_telepon' => 'Telepon', 'alamat' => 'Alamat', 'tanggal_daftar' => 'Tanggal daftar', 'status' => 'Status',
         ],
-        'order' => 'u.`nama_lengkap` ASC',
     ],
     'peminjaman' => [
         'title' => 'Laporan Peminjaman',
         'date_label' => 'Tanggal peminjaman',
-        'date_column' => 'p.`tanggal_pinjam`',
-        'query' => 'SELECT p.`peminjaman_id`, u.`nama_lengkap`, a.`nomor_anggota`, b.`judul`, b.`isbn`,
-                           p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`, p.`status`
-                    FROM `peminjaman` p
-                    INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
-                    INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-                    INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`',
+        'date_key' => 'tanggal_pinjam',
+        'source' => 'peminjaman',
         'columns' => [
             'peminjaman_id' => 'ID', 'nama_lengkap' => 'Anggota', 'nomor_anggota' => 'Nomor anggota',
             'judul' => 'Buku', 'isbn' => 'ISBN', 'tanggal_pinjam' => 'Tanggal pinjam',
             'tanggal_jatuh_tempo' => 'Jatuh tempo', 'status' => 'Status',
         ],
-        'order' => 'p.`tanggal_pinjam` DESC, p.`peminjaman_id` DESC',
     ],
     'pengembalian' => [
         'title' => 'Laporan Pengembalian',
         'date_label' => 'Tanggal pengembalian',
-        'date_column' => 'r.`tanggal_kembali`',
-        'query' => 'SELECT r.`pengembalian_id`, u.`nama_lengkap`, a.`nomor_anggota`, b.`judul`, b.`isbn`,
-                           p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`, r.`tanggal_kembali`,
-                           COALESCE(d.`jumlah_hari_terlambat`, 0) AS `jumlah_hari_terlambat`,
-                           COALESCE(d.`jumlah_denda`, 0) AS `jumlah_denda`
-                    FROM `pengembalian` r
-                    INNER JOIN `peminjaman` p ON p.`peminjaman_id` = r.`peminjaman_id`
-                    INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
-                    INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-                    INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
-                    LEFT JOIN `denda` d ON d.`pengembalian_id` = r.`pengembalian_id`',
+        'date_key' => 'tanggal_kembali',
+        'source' => 'pengembalian',
         'columns' => [
             'pengembalian_id' => 'ID', 'nama_lengkap' => 'Anggota', 'nomor_anggota' => 'Nomor anggota',
             'judul' => 'Buku', 'isbn' => 'ISBN', 'tanggal_pinjam' => 'Tanggal pinjam',
             'tanggal_jatuh_tempo' => 'Jatuh tempo', 'tanggal_kembali' => 'Tanggal kembali',
             'jumlah_hari_terlambat' => 'Terlambat (hari)', 'jumlah_denda' => 'Denda',
         ],
-        'order' => 'r.`tanggal_kembali` DESC, r.`pengembalian_id` DESC',
     ],
     'denda' => [
         'title' => 'Laporan Denda',
         'date_label' => 'Tanggal pengembalian',
-        'date_column' => 'r.`tanggal_kembali`',
-        'query' => 'SELECT u.`nama_lengkap`, a.`nomor_anggota`, b.`judul`, p.`tanggal_jatuh_tempo`,
-                           r.`tanggal_kembali`, d.`jumlah_hari_terlambat`, d.`tarif_per_hari`,
-                           d.`jumlah_denda`, d.`status_pembayaran`, d.`tanggal_pembayaran`
-                    FROM `denda` d
-                    INNER JOIN `pengembalian` r ON r.`pengembalian_id` = d.`pengembalian_id`
-                    INNER JOIN `peminjaman` p ON p.`peminjaman_id` = r.`peminjaman_id`
-                    INNER JOIN `anggota` a ON a.`anggota_id` = p.`anggota_id`
-                    INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-                    INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`',
+        'date_key' => 'tanggal_kembali',
+        'source' => 'denda',
         'columns' => [
             'nama_lengkap' => 'Anggota', 'nomor_anggota' => 'Nomor anggota', 'judul' => 'Buku',
             'tanggal_jatuh_tempo' => 'Jatuh tempo', 'tanggal_kembali' => 'Tanggal kembali',
@@ -96,7 +64,6 @@ $reportDefinitions = [
             'jumlah_denda' => 'Jumlah denda', 'status_pembayaran' => 'Status pembayaran',
             'tanggal_pembayaran' => 'Tanggal pembayaran',
         ],
-        'order' => 'r.`tanggal_kembali` DESC, d.`denda_id` DESC',
     ],
 ];
 
@@ -126,25 +93,115 @@ if (!$validateDate($dateFrom) || !$validateDate($dateTo)) {
 
 $records = [];
 if ($errorMessage === '') {
-    $conditions = [];
-    $parameters = [];
-    if ($dateFrom !== '') {
-        $conditions[] = $report['date_column'] . ' >= :tanggal_dari';
-        $parameters['tanggal_dari'] = $dateFrom;
-    }
-    if ($dateTo !== '') {
-        $conditions[] = $report['date_column'] . ' <= :tanggal_sampai';
-        $parameters['tanggal_sampai'] = $dateTo;
+    switch ($selectedReport) {
+        case 'buku':
+            foreach ($database['buku'] as $book) {
+                $joined = digilibDatabaseBookRecord($database, (int) $book['buku_id']);
+                if ($joined !== null) {
+                    $records[] = [
+                        'isbn' => $book['isbn'],
+                        'judul' => $book['judul'],
+                        'penulis' => $book['penulis'],
+                        'penerbit' => $book['penerbit'],
+                        'tahun_terbit' => $book['tahun_terbit'],
+                        'nama_kategori' => $joined['nama_kategori'] ?? '',
+                        'rak' => $book['rak'],
+                        'stok' => $book['stok'],
+                        'status' => $book['status'],
+                        'created_at' => $book['created_at'] ?? '',
+                    ];
+                }
+            }
+            usort($records, static function (array $left, array $right): int {
+                return strcasecmp($left['judul'], $right['judul']);
+            });
+            break;
+        case 'anggota':
+            foreach ($database['anggota'] as $member) {
+                $joined = digilibDatabaseMemberRecord($database, (int) $member['anggota_id']);
+                if ($joined !== null && $joined['role'] === 'anggota') {
+                    $records[] = $joined;
+                }
+            }
+            usort($records, static function (array $left, array $right): int {
+                return strcasecmp($left['nama_lengkap'], $right['nama_lengkap']);
+            });
+            break;
+        case 'peminjaman':
+            foreach ($database['peminjaman'] as $loan) {
+                $joined = digilibDatabaseLoanRecord($database, (int) $loan['peminjaman_id']);
+                if ($joined !== null) {
+                    $records[] = array_merge($loan, [
+                        'nama_lengkap' => $joined['nama_lengkap'],
+                        'nomor_anggota' => $joined['nomor_anggota'],
+                        'judul' => $joined['buku']['judul'],
+                        'isbn' => $joined['buku']['isbn'],
+                    ]);
+                }
+            }
+            usort($records, static function (array $left, array $right): int {
+                $dateOrder = strcmp($right['tanggal_pinjam'], $left['tanggal_pinjam']);
+                return $dateOrder !== 0 ? $dateOrder : ((int) $right['peminjaman_id'] <=> (int) $left['peminjaman_id']);
+            });
+            break;
+        case 'pengembalian':
+            foreach ($database['pengembalian'] as $returnRecord) {
+                $joined = digilibDatabaseLoanRecord($database, (int) $returnRecord['peminjaman_id']);
+                if ($joined === null) {
+                    continue;
+                }
+                $fine = null;
+                foreach ($database['denda'] as $fineRecord) {
+                    if ((int) $fineRecord['pengembalian_id'] === (int) $returnRecord['pengembalian_id']) {
+                        $fine = $fineRecord;
+                        break;
+                    }
+                }
+                $records[] = [
+                    'pengembalian_id' => $returnRecord['pengembalian_id'],
+                    'nama_lengkap' => $joined['nama_lengkap'],
+                    'nomor_anggota' => $joined['nomor_anggota'],
+                    'judul' => $joined['buku']['judul'],
+                    'isbn' => $joined['buku']['isbn'],
+                    'tanggal_pinjam' => $joined['tanggal_pinjam'],
+                    'tanggal_jatuh_tempo' => $joined['tanggal_jatuh_tempo'],
+                    'tanggal_kembali' => $returnRecord['tanggal_kembali'],
+                    'jumlah_hari_terlambat' => $fine['jumlah_hari_terlambat'] ?? 0,
+                    'jumlah_denda' => $fine['jumlah_denda'] ?? 0,
+                ];
+            }
+            usort($records, static function (array $left, array $right): int {
+                $dateOrder = strcmp($right['tanggal_kembali'], $left['tanggal_kembali']);
+                return $dateOrder !== 0 ? $dateOrder : ((int) $right['pengembalian_id'] <=> (int) $left['pengembalian_id']);
+            });
+            break;
+        case 'denda':
+            foreach ($database['denda'] as $fine) {
+                $returnRecord = digilibDatabaseRecord($database, 'pengembalian', 'pengembalian_id', (int) $fine['pengembalian_id']);
+                $joined = $returnRecord === null
+                    ? null
+                    : digilibDatabaseLoanRecord($database, (int) $returnRecord['peminjaman_id']);
+                if ($joined !== null) {
+                    $records[] = array_merge($fine, [
+                        'nama_lengkap' => $joined['nama_lengkap'],
+                        'nomor_anggota' => $joined['nomor_anggota'],
+                        'judul' => $joined['buku']['judul'],
+                        'tanggal_jatuh_tempo' => $joined['tanggal_jatuh_tempo'],
+                        'tanggal_kembali' => $returnRecord['tanggal_kembali'],
+                    ]);
+                }
+            }
+            usort($records, static function (array $left, array $right): int {
+                $dateOrder = strcmp($right['tanggal_kembali'], $left['tanggal_kembali']);
+                return $dateOrder !== 0 ? $dateOrder : ((int) $right['denda_id'] <=> (int) $left['denda_id']);
+            });
+            break;
     }
 
-    $query = $report['query'];
-    if ($conditions !== []) {
-        $query .= ' WHERE ' . implode(' AND ', $conditions);
-    }
-    $query .= ' ORDER BY ' . $report['order'];
-    $statement = $pdo->prepare($query);
-    $statement->execute($parameters);
-    $records = $statement->fetchAll();
+    $records = array_values(array_filter($records, static function (array $record) use ($report, $dateFrom, $dateTo): bool {
+        $date = substr((string) ($record[$report['date_key']] ?? ''), 0, 10);
+        return ($dateFrom === '' || $date >= $dateFrom) && ($dateTo === '' || $date <= $dateTo);
+    }));
 }
 
 $formatCell = static function (string $key, $value): string {

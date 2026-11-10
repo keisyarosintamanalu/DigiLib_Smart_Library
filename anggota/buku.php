@@ -2,38 +2,39 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
-require_once __DIR__ . '/../config/supabase_storage.php';
+require_once __DIR__ . '/../config/book_covers.php';
 $portalUser = digilibRequireRole(['anggota']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Katalog Buku';
 $portalDescription = 'Cari buku pilihan dan pinjam langsung dari katalog.';
 $activePage = 'books';
 
-$memberStatement = $pdo->prepare(
-    "SELECT `anggota_id` FROM `anggota`
-     WHERE `user_id` = :user_id AND `status` = 'aktif'
-     LIMIT 1"
-);
-$memberStatement->execute(['user_id' => $portalUser['user_id']]);
-$memberId = $memberStatement->fetchColumn();
-if ($memberId === false) {
+$memberId = null;
+foreach ($database['anggota'] as $member) {
+    if ((int) $member['user_id'] === (int) $portalUser['user_id'] && $member['status'] === 'aktif') {
+        $memberId = (int) $member['anggota_id'];
+        break;
+    }
+}
+if ($memberId === null) {
     throw new RuntimeException('Active member profile could not be loaded.');
 }
 
-$activeCountStatement = $pdo->prepare(
-    "SELECT COUNT(*) FROM `peminjaman`
-     WHERE `anggota_id` = :anggota_id AND `status` = 'dipinjam'"
-);
-$activeCountStatement->execute(['anggota_id' => $memberId]);
-$activeCount = (int) $activeCountStatement->fetchColumn();
-
-$categories = $pdo->query(
-    'SELECT DISTINCT k.`kategori_id`, k.`nama_kategori`
-     FROM `kategori` k
-     INNER JOIN `buku` b ON b.`kategori_id` = k.`kategori_id`
-     WHERE b.`status` = \'aktif\'
-     ORDER BY k.`nama_kategori`'
-)->fetchAll();
+$activeCount = count(array_filter($database['peminjaman'], static function (array $loan) use ($memberId): bool {
+    return (int) $loan['anggota_id'] === $memberId && $loan['status'] === 'dipinjam';
+}));
+$categoryIds = [];
+foreach ($database['buku'] as $book) {
+    if ($book['status'] === 'aktif') {
+        $categoryIds[(int) $book['kategori_id']] = true;
+    }
+}
+$categories = array_values(array_filter($database['kategori'], static function (array $category) use ($categoryIds): bool {
+    return isset($categoryIds[(int) $category['kategori_id']]);
+}));
+usort($categories, static function (array $left, array $right): int {
+    return strcasecmp($left['nama_kategori'], $right['nama_kategori']);
+});
 
 $search = trim((string) ($_GET['q'] ?? ''));
 $categoryFilter = filter_var($_GET['kategori'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -41,33 +42,29 @@ if ($categoryFilter === false) {
     $categoryFilter = null;
 }
 
-$conditions = ["b.`status` = 'aktif'"];
-$parameters = [];
-if ($search !== '') {
-    $conditions[] = '(b.`isbn` LIKE :isbn OR b.`judul` LIKE :judul OR b.`penulis` LIKE :penulis OR b.`penerbit` LIKE :penerbit OR k.`nama_kategori` LIKE :kategori_cari)';
-    $term = '%' . $search . '%';
-    $parameters['isbn'] = $term;
-    $parameters['judul'] = $term;
-    $parameters['penulis'] = $term;
-    $parameters['penerbit'] = $term;
-    $parameters['kategori_cari'] = $term;
+$books = [];
+foreach ($database['buku'] as $bookRecord) {
+    if ($bookRecord['status'] !== 'aktif'
+        || ($categoryFilter !== null && (int) $bookRecord['kategori_id'] !== (int) $categoryFilter)) {
+        continue;
+    }
+    $book = digilibDatabaseBookRecord($database, (int) $bookRecord['buku_id']);
+    $haystack = implode(' ', [
+        $book['isbn'] ?? '',
+        $book['judul'] ?? '',
+        $book['penulis'] ?? '',
+        $book['penerbit'] ?? '',
+        $book['nama_kategori'] ?? '',
+    ]);
+    if ($search !== '' && stripos($haystack, $search) === false) {
+        continue;
+    }
+    $books[] = $book;
 }
-if ($categoryFilter !== null) {
-    $conditions[] = 'b.`kategori_id` = :kategori_id';
-    $parameters['kategori_id'] = $categoryFilter;
-}
-
-$booksStatement = $pdo->prepare(
-    'SELECT b.`buku_id`, b.`isbn`, b.`judul`, b.`penulis`, b.`penerbit`, b.`tahun_terbit`,
-            b.`rak`, b.`stok`, b.`cover_path`, k.`nama_kategori`
-     FROM `buku` b
-     INNER JOIN `kategori` k ON k.`kategori_id` = b.`kategori_id`
-     WHERE ' . implode(' AND ', $conditions) . '
-     ORDER BY b.`judul` ASC, b.`buku_id` DESC'
-);
-$booksStatement->execute($parameters);
-$books = $booksStatement->fetchAll();
-
+usort($books, static function (array $left, array $right): int {
+    $titleOrder = strcasecmp($left['judul'], $right['judul']);
+    return $titleOrder !== 0 ? $titleOrder : ((int) $right['buku_id'] <=> (int) $left['buku_id']);
+});
 ?>
 <?php require __DIR__ . '/../includes/portal_header.php'; ?>
 <section class="card-shadow mb-6 rounded-2xl border border-slate-100 bg-white p-4 sm:p-5">
@@ -103,9 +100,7 @@ $books = $booksStatement->fetchAll();
         <thead><tr><th>Informasi buku</th><th>Kategori</th><th>Tahun</th><th>Rak</th><th>Stok</th><th>Status</th><th>Aksi</th></tr></thead>
         <tbody>
           <?php foreach ($books as $index => $book): ?>
-            <?php
-              $coverUrl = digilibBookCoverUrl(is_string($book['cover_path']) ? $book['cover_path'] : null);
-            ?>
+            <?php $coverUrl = digilibBookCoverUrl(is_string($book['cover_path']) ? $book['cover_path'] : null); ?>
             <tr>
               <td>
                 <div class="flex min-w-[220px] items-center gap-3">

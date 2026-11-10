@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/auth.php';
 $portalUser = digilibRequireRole(['anggota']);
-$pdo = digilibDatabaseConnection();
+$database = digilibDatabaseRead();
 $portalTitle = 'Peminjaman Buku';
 $portalDescription = 'Pinjam buku yang tersedia dan pantau tanggal pengembaliannya.';
 $activePage = 'loans';
@@ -21,130 +21,129 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errorMessage = 'Pilih buku yang valid untuk dipinjam.';
         } else {
             try {
-                $pdo->beginTransaction();
+                $loan = digilibDatabaseTransaction(static function (array &$database) use ($portalUser, $bookId): array {
+                    $member = null;
+                    foreach ($database['anggota'] as $memberRecord) {
+                        if ((int) $memberRecord['user_id'] !== (int) $portalUser['user_id']) {
+                            continue;
+                        }
+                        foreach ($database['users'] as $user) {
+                            if ((int) $user['user_id'] === (int) $portalUser['user_id']
+                                && $user['role'] === 'anggota') {
+                                $member = ['profile' => $memberRecord, 'user' => $user];
+                                break 2;
+                            }
+                        }
+                    }
+                    if ($member === null
+                        || $member['profile']['status'] !== 'aktif'
+                        || $member['user']['status'] !== 'aktif') {
+                        throw new DomainException('inactive_member');
+                    }
 
-                $memberStatement = $pdo->prepare(
-                    "SELECT a.`anggota_id`, a.`status` AS `status_anggota`, u.`status` AS `status_user`
-                     FROM `anggota` a
-                     INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-                     WHERE a.`user_id` = :user_id AND u.`role` = 'anggota'
-                     FOR UPDATE"
-                );
-                $memberStatement->execute(['user_id' => $portalUser['user_id']]);
-                $member = $memberStatement->fetch();
+                    $memberId = (int) $member['profile']['anggota_id'];
+                    $activeCount = count(array_filter($database['peminjaman'], static function (array $record) use ($memberId): bool {
+                        return (int) $record['anggota_id'] === $memberId && $record['status'] === 'dipinjam';
+                    }));
+                    if ($activeCount >= 3) {
+                        throw new DomainException('loan_limit');
+                    }
 
-                if (!$member || $member['status_anggota'] !== 'aktif' || $member['status_user'] !== 'aktif') {
-                    $pdo->rollBack();
+                    $bookIndex = null;
+                    foreach ($database['buku'] as $index => $bookRecord) {
+                        if ((int) $bookRecord['buku_id'] === (int) $bookId && $bookRecord['status'] === 'aktif') {
+                            $bookIndex = $index;
+                            break;
+                        }
+                    }
+                    if ($bookIndex === null) {
+                        throw new DomainException('book_missing');
+                    }
+                    if ((int) $database['buku'][$bookIndex]['stok'] < 1) {
+                        throw new DomainException('book_out_of_stock');
+                    }
+
+                    $database['buku'][$bookIndex]['stok'] = (int) $database['buku'][$bookIndex]['stok'] - 1;
+                    $timestamp = digilibDatabaseTimestamp();
+                    $loan = [
+                        'peminjaman_id' => digilibDatabaseNextId($database, 'peminjaman', 'peminjaman_id'),
+                        'anggota_id' => $memberId,
+                        'buku_id' => (int) $bookId,
+                        'tanggal_pinjam' => digilibDatabaseToday(),
+                        'tanggal_jatuh_tempo' => (new DateTimeImmutable('today +7 days'))->format('Y-m-d'),
+                        'status' => 'dipinjam',
+                        'created_at' => $timestamp,
+                        'updated_at' => $timestamp,
+                    ];
+                    $database['peminjaman'][] = $loan;
+                    return ['loan' => $loan, 'judul' => $database['buku'][$bookIndex]['judul']];
+                });
+                $_SESSION['loans_success'] = 'Peminjaman "' . $loan['judul'] . '" berhasil. Batas pengembalian 7 hari setelah tanggal peminjaman.';
+                header('Location: ' . digilibUrl('anggota/peminjaman.php'), true, 303);
+                exit;
+            } catch (DomainException $exception) {
+                if ($exception->getMessage() === 'inactive_member') {
                     unset($_SESSION['digilib_user']);
                     session_regenerate_id(true);
                     header('Location: ' . digilibUrl('index.php?account=inactive'), true, 303);
                     exit;
                 }
-
-                $activeCountStatement = $pdo->prepare(
-                    "SELECT COUNT(*) FROM `peminjaman`
-                     WHERE `anggota_id` = :anggota_id AND `status` = 'dipinjam'"
-                );
-                $activeCountStatement->execute(['anggota_id' => $member['anggota_id']]);
-                $activeCount = (int) $activeCountStatement->fetchColumn();
-
-                if ($activeCount >= 3) {
-                    $pdo->rollBack();
-                    $errorMessage = 'Batas maksimal peminjaman adalah 3 buku yang sedang dipinjam.';
-                } else {
-                    $bookStatement = $pdo->prepare(
-                        "SELECT `buku_id`, `judul`, `stok`
-                         FROM `buku`
-                         WHERE `buku_id` = :buku_id AND `status` = 'aktif'
-                         FOR UPDATE"
-                    );
-                    $bookStatement->execute(['buku_id' => $bookId]);
-                    $book = $bookStatement->fetch();
-
-                    if (!$book) {
-                        $pdo->rollBack();
-                        $errorMessage = 'Buku tidak ditemukan atau tidak aktif.';
-                    } elseif ((int) $book['stok'] < 1) {
-                        $pdo->rollBack();
-                        $errorMessage = 'Stok buku habis. Buku ini tidak dapat dipinjam saat ini.';
-                    } else {
-                        $updateStock = $pdo->prepare(
-                            "UPDATE `buku`
-                             SET `stok` = `stok` - 1
-                             WHERE `buku_id` = :buku_id AND `status` = 'aktif' AND `stok` > 0"
-                        );
-                        $updateStock->execute(['buku_id' => $bookId]);
-
-                        if ($updateStock->rowCount() !== 1) {
-                            $pdo->rollBack();
-                            $errorMessage = 'Stok buku baru saja berubah. Muat ulang halaman dan coba lagi.';
-                        } else {
-                            $insertLoan = $pdo->prepare(
-                                "INSERT INTO `peminjaman`
-                                    (`anggota_id`, `buku_id`, `tanggal_pinjam`, `tanggal_jatuh_tempo`, `status`)
-                                 VALUES
-                                    (:anggota_id, :buku_id, CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 7 DAY), 'dipinjam')"
-                            );
-                            $insertLoan->execute([
-                                'anggota_id' => $member['anggota_id'],
-                                'buku_id' => $bookId,
-                            ]);
-                            $pdo->commit();
-                            $_SESSION['loans_success'] = 'Peminjaman "' . $book['judul'] . '" berhasil. Batas pengembalian 7 hari setelah tanggal peminjaman.';
-                            header('Location: ' . digilibUrl('anggota/peminjaman.php'), true, 303);
-                            exit;
-                        }
-                    }
-                }
-            } catch (PDOException $exception) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                error_log('DIGILIB loan create database error: ' . $exception->getMessage());
-                $errorMessage = 'Peminjaman gagal disimpan karena terjadi kesalahan database. Silakan coba lagi.';
+                $errorMessage = [
+                    'loan_limit' => 'Batas maksimal peminjaman adalah 3 buku yang sedang dipinjam.',
+                    'book_missing' => 'Buku tidak ditemukan atau tidak aktif.',
+                    'book_out_of_stock' => 'Stok buku habis. Buku ini tidak dapat dipinjam saat ini.',
+                ][$exception->getMessage()] ?? 'Peminjaman tidak dapat diproses.';
+            } catch (RuntimeException $exception) {
+                error_log('DIGILIB loan create JSON database error: ' . $exception->getMessage());
+                $errorMessage = 'Peminjaman gagal disimpan karena terjadi kesalahan penyimpanan. Silakan coba lagi.';
             }
         }
     }
 }
 
-$memberStatement = $pdo->prepare(
-    "SELECT `anggota_id` FROM `anggota`
-     WHERE `user_id` = :user_id AND `status` = 'aktif'
-     LIMIT 1"
-);
-$memberStatement->execute(['user_id' => $portalUser['user_id']]);
-$memberId = $memberStatement->fetchColumn();
-if ($memberId === false) {
+$database = digilibDatabaseRead();
+$memberId = null;
+foreach ($database['anggota'] as $member) {
+    if ((int) $member['user_id'] === (int) $portalUser['user_id'] && $member['status'] === 'aktif') {
+        $memberId = (int) $member['anggota_id'];
+        break;
+    }
+}
+if ($memberId === null) {
     unset($_SESSION['digilib_user']);
     session_regenerate_id(true);
     header('Location: ' . digilibUrl('index.php?account=inactive'), true, 303);
     exit;
 }
 
-$activeCountStatement = $pdo->prepare(
-    "SELECT COUNT(*) FROM `peminjaman`
-     WHERE `anggota_id` = :anggota_id AND `status` = 'dipinjam'"
-);
-$activeCountStatement->execute(['anggota_id' => $memberId]);
-$activeCount = (int) $activeCountStatement->fetchColumn();
+$activeCount = count(array_filter($database['peminjaman'], static function (array $loan) use ($memberId): bool {
+    return (int) $loan['anggota_id'] === $memberId && $loan['status'] === 'dipinjam';
+}));
+$availableBooks = array_values(array_filter($database['buku'], static function (array $book): bool {
+    return $book['status'] === 'aktif' && (int) $book['stok'] > 0;
+}));
+usort($availableBooks, static function (array $left, array $right): int {
+    return strcasecmp($left['judul'], $right['judul']);
+});
 
-$availableBooks = $pdo->query(
-    "SELECT `buku_id`, `isbn`, `judul`, `penulis`, `penerbit`, `tahun_terbit`, `rak`, `stok`
-     FROM `buku`
-     WHERE `status` = 'aktif' AND `stok` > 0
-     ORDER BY `judul` ASC"
-)->fetchAll();
-
-$historyStatement = $pdo->prepare(
-    'SELECT p.`peminjaman_id`, p.`tanggal_pinjam`, p.`tanggal_jatuh_tempo`, p.`status`,
-            b.`judul`, b.`penulis`, b.`isbn`
-     FROM `peminjaman` p
-     INNER JOIN `buku` b ON b.`buku_id` = p.`buku_id`
-     WHERE p.`anggota_id` = :anggota_id
-     ORDER BY p.`tanggal_pinjam` DESC, p.`peminjaman_id` DESC'
-);
-$historyStatement->execute(['anggota_id' => $memberId]);
-$loans = $historyStatement->fetchAll();
+$loans = [];
+foreach ($database['peminjaman'] as $loan) {
+    if ((int) $loan['anggota_id'] !== $memberId) {
+        continue;
+    }
+    $book = digilibDatabaseBookRecord($database, (int) $loan['buku_id']);
+    if ($book !== null) {
+        $loans[] = array_merge($loan, [
+            'judul' => $book['judul'],
+            'penulis' => $book['penulis'],
+            'isbn' => $book['isbn'],
+        ]);
+    }
+}
+usort($loans, static function (array $left, array $right): int {
+    $dateOrder = strcmp($right['tanggal_pinjam'], $left['tanggal_pinjam']);
+    return $dateOrder !== 0 ? $dateOrder : ((int) $right['peminjaman_id'] <=> (int) $left['peminjaman_id']);
+});
 ?>
 <?php require __DIR__ . '/../includes/portal_header.php'; ?>
 

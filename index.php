@@ -31,15 +31,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $errorMessage = 'Email dan kata sandi harus diisi dengan benar.';
         } else {
             try {
-                $pdo = digilibDatabaseConnection();
-                $statement = $pdo->prepare(
-                    'SELECT user_id, nama_lengkap, email, password_hash, role, status
-                     FROM users
-                     WHERE email = :email
-                     LIMIT 1'
-                );
-                $statement->execute(['email' => $email]);
-                $account = $statement->fetch();
+                $database = digilibDatabaseRead();
+                $account = null;
+                foreach ($database['users'] as $user) {
+                    if (strcasecmp((string) $user['email'], (string) $email) === 0) {
+                        $account = $user;
+                        break;
+                    }
+                }
 
                 $supportedRole = $account && in_array($account['role'], ['admin', 'pustakawan', 'anggota'], true);
 
@@ -47,11 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $errorMessage = 'Email, kata sandi, atau jenis akun tidak sesuai.';
                 } else {
                     if ($account['role'] === 'anggota') {
-                        $memberStatement = $pdo->prepare(
-                            "SELECT status FROM anggota WHERE user_id = :user_id LIMIT 1"
-                        );
-                        $memberStatement->execute(['user_id' => $account['user_id']]);
-                        $member = $memberStatement->fetch();
+                        $member = null;
+                        foreach ($database['anggota'] as $memberRecord) {
+                            if ((int) $memberRecord['user_id'] === (int) $account['user_id']) {
+                                $member = $memberRecord;
+                                break;
+                            }
+                        }
                         if (!$member || $member['status'] !== 'aktif') {
                             $errorMessage = 'Status keanggotaan tidak aktif. Hubungi pustakawan.';
                         }
@@ -67,10 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         digilibRedirectForRole((string) $account['role']);
                     }
                 }
-            } catch (PDOException $exception) {
-                error_log('DIGILIB login database error: ' . $exception->getMessage());
+            } catch (RuntimeException $exception) {
+                error_log('DIGILIB login JSON database error: ' . $exception->getMessage());
                 http_response_code(503);
-                $errorMessage = 'Database belum dapat dihubungi. Periksa host, nama database, dan kredensial MySQL pada konfigurasi hosting.';
+                $errorMessage = 'Data perpustakaan belum dapat dibaca. Periksa izin folder database pada hosting.';
             }
         }
     }

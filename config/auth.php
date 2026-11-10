@@ -74,16 +74,22 @@ function digilibRequireRole(array $allowedRoles): array
     }
 
     if ($user['role'] === 'anggota') {
-        $pdo = digilibDatabaseConnection();
-        $statement = $pdo->prepare(
-            "SELECT a.`status` AS `status_anggota`, u.`status` AS `status_user`
-             FROM `anggota` a
-             INNER JOIN `users` u ON u.`user_id` = a.`user_id`
-             WHERE a.`user_id` = :user_id AND u.`role` = 'anggota'
-             LIMIT 1"
-        );
-        $statement->execute(['user_id' => $user['user_id']]);
-        $account = $statement->fetch();
+        $database = digilibDatabaseRead();
+        $account = null;
+        foreach ($database['anggota'] as $member) {
+            if ((int) $member['user_id'] === (int) $user['user_id']) {
+                foreach ($database['users'] as $accountRecord) {
+                    if ((int) $accountRecord['user_id'] === (int) $user['user_id']
+                        && $accountRecord['role'] === 'anggota') {
+                        $account = [
+                            'status_anggota' => $member['status'],
+                            'status_user' => $accountRecord['status'],
+                        ];
+                        break 2;
+                    }
+                }
+            }
+        }
 
         if (!$account || $account['status_anggota'] !== 'aktif' || $account['status_user'] !== 'aktif') {
             unset($_SESSION['digilib_user']);

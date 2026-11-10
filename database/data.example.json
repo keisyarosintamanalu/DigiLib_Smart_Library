@@ -1,0 +1,66 @@
+{
+  "users": [
+    {
+      "user_id": 1,
+      "nama_lengkap": "Admin DIGILIB",
+      "email": "admin@digilib.id",
+      "password_hash": "$2y$10$75CE7zkMVV99qygsamIp9eBo10/E0KlwjGKHPa4Vww08OrHmP.XB2",
+      "role": "admin",
+      "status": "aktif",
+      "created_at": "2026-01-01 00:00:00",
+      "updated_at": "2026-01-01 00:00:00"
+    },
+    {
+      "user_id": 2,
+      "nama_lengkap": "Anggota Demo",
+      "email": "anggota@digilib.id",
+      "password_hash": "$2y$10$VcmfOz3fbJuM4l013dQkuuuIcUd3iPzXTjX.XoF3bScAjqxxlkdTe",
+      "role": "anggota",
+      "status": "aktif",
+      "created_at": "2026-01-01 00:00:00",
+      "updated_at": "2026-01-01 00:00:00"
+    }
+  ],
+  "kategori": [
+    {
+      "kategori_id": 1,
+      "nama_kategori": "Fiksi",
+      "deskripsi": "Novel, cerita pendek, dan karya sastra."
+    },
+    {
+      "kategori_id": 2,
+      "nama_kategori": "Teknologi",
+      "deskripsi": "Komputer, teknologi informasi, dan sains terapan."
+    },
+    {
+      "kategori_id": 3,
+      "nama_kategori": "Pendidikan",
+      "deskripsi": "Buku pelajaran dan materi pembelajaran."
+    },
+    {
+      "kategori_id": 4,
+      "nama_kategori": "Sejarah",
+      "deskripsi": "Sejarah Indonesia dan dunia."
+    },
+    {
+      "kategori_id": 5,
+      "nama_kategori": "Pengembangan Diri",
+      "deskripsi": "Keterampilan pribadi dan pengembangan karier."
+    }
+  ],
+  "anggota": [
+    {
+      "anggota_id": 1,
+      "user_id": 2,
+      "nomor_anggota": "DEMO-0001",
+      "nomor_telepon": "0812-0000-0001",
+      "alamat": "Anggota demo DIGILIB",
+      "tanggal_daftar": "2026-01-01",
+      "status": "aktif"
+    }
+  ],
+  "buku": [],
+  "peminjaman": [],
+  "pengembalian": [],
+  "denda": []
+}
