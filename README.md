@@ -51,4 +51,10 @@ Untuk instalasi baru tanpa database lama, aplikasi membuat akun dan kategori con
 - Anggota dapat mencari katalog, melihat detail buku, meminjam, dan memeriksa riwayat.
 - Setiap perubahan database JSON dilakukan di server dengan token CSRF; password disimpan sebagai hash.
 
-Landing page ditampilkan oleh `index.php`; file `index.html` dan `assets/app.js` adalah versi SPA lama untuk arsip/demo, bukan database produksi aplikasi PHP.
+Landing page dan portal PHP tersedia melalui `index.php` pada hosting yang menjalankan PHP. Untuk deployment statis, entry point `index.html` menjalankan aplikasi browser dari `assets/app.js`.
+
+## Deployment Vercel (website statis)
+
+Vercel menyajikan `index.html`, yang memuat landing page, login, dashboard admin/anggota, dan fitur SPA di `assets/app.js`. `index.php` tetap dipakai di server PHP seperti Laragon, tetapi Vercel tidak mengeksekusi file PHP.
+
+Pada deployment statis, data SPA hanya tersimpan di `localStorage` browser yang sedang dipakai dan tidak membaca atau memperbarui `database/data.json`. Artinya, perubahan data tidak tersinkron antarperangkat dan akan hilang jika data situs browser dihapus. Database JSON server di `database/data.json` hanya berlaku untuk hosting yang menjalankan PHP dan memiliki disk persisten.

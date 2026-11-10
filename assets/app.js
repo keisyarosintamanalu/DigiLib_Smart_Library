@@ -1029,5 +1029,6 @@
   });
 
   if (currentUser) renderShell();
+  else if (new URLSearchParams(window.location.search).get('login') === '1') renderLogin();
   else renderLanding();
 })();
